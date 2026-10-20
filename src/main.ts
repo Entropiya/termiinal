@@ -51,6 +51,10 @@ const presetPortEl = document.querySelector<HTMLInputElement>("#preset-port")!;
 const presetKeyEl = document.querySelector<HTMLInputElement>("#preset-key")!;
 const btnPresetSave = document.querySelector<HTMLButtonElement>("#btn-preset-save")!;
 const btnPresetDelete = document.querySelector<HTMLButtonElement>("#btn-preset-delete")!;
+const savePromptEl = document.querySelector<HTMLDivElement>("#save-prompt")!;
+const savePromptTextEl = document.querySelector<HTMLSpanElement>("#save-prompt-text")!;
+const btnSavePromptYes = document.querySelector<HTMLButtonElement>("#btn-save-prompt-yes")!;
+const btnSavePromptNo = document.querySelector<HTMLButtonElement>("#btn-save-prompt-no")!;
 const btnIntegrate = document.querySelector<HTMLButtonElement>("#btn-integrate")!;
 const blocksEl = document.querySelector<HTMLDivElement>("#blocks")!;
 const paneSideEl = document.querySelector<HTMLElement>("#pane-side")!;
@@ -293,7 +297,32 @@ function handleProbeResult(r: ProbeResult | null) {
   // текста промпта (как того просит ТЗ для автовключения) у нас пока нет. Саму отправку
   // см. в scheduleProbeTrailingEnd — тут только ставим флаг, см. комментарий там.
   if (r.hostname) pendingAutoIntegration = true;
+  // Подключение заработало по-настоящему (проба прошла) — если это было НЕ из сохранённого
+  // пресета (поле выбора пустое — "новое подключение"), самое время предложить сохранить.
+  if (r.hostname && presetSelectEl.value === "") showSavePrompt();
 }
+
+function showSavePrompt() {
+  savePromptTextEl.textContent = `Сохранить подключение «${presetNameEl.value || presetHostEl.value}» как пресет?`;
+  savePromptEl.classList.remove("hidden");
+}
+
+function hideSavePrompt() {
+  savePromptEl.classList.add("hidden");
+}
+
+btnSavePromptYes.addEventListener("click", () => {
+  const id = crypto.randomUUID();
+  const preset = currentFieldsAsPreset(id);
+  if (preset.user && preset.host) {
+    upsertPreset(preset);
+    refreshPresetSelect(id);
+    renderLauncherList();
+  }
+  hideSavePrompt();
+});
+
+btnSavePromptNo.addEventListener("click", hideSavePrompt);
 
 /** Короткая строка контекста, которую агент видит в КАЖДОМ сообщении (и блоке, и чате).
  * Без неё агент не знает, что перед ним — локальный Windows (Git Bash) или удалённый
@@ -491,6 +520,8 @@ function setSessionActive(active: boolean) {
   btnSsh.textContent = active ? "Завершить сессию" : "Подключиться";
   btnSsh.classList.toggle("btn-primary", !active);
   btnSsh.classList.toggle("btn-danger", active);
+  shellEl.dataset.session = active ? "active" : "idle";
+  if (!active) hideSavePrompt();
 }
 
 btnSpawn.addEventListener("click", () => {
@@ -565,6 +596,7 @@ btnPresetSave.addEventListener("click", () => {
   }
   upsertPreset(preset);
   refreshPresetSelect(id);
+  renderLauncherList();
 });
 
 btnPresetDelete.addEventListener("click", () => {
@@ -575,19 +607,12 @@ btnPresetDelete.addEventListener("click", () => {
   // Поля должны реально опустеть, а не остаться с данными только что удалённого
   // пресета — иначе визуально выглядит так, будто удаление не сработало.
   clearPresetFields();
+  renderLauncherList();
 });
 
 refreshPresetSelect();
 
-btnSsh.addEventListener("click", () => {
-  if (pty) {
-    pty.kill().catch((err) => {
-      statusEl.textContent = `ошибка завершения: ${err}`;
-    });
-    // UI полностью сбросится по событию pty-exit (onExit выше), killer только просит
-    // процесс завершиться — ждём подтверждения от wait-потока в Rust.
-    return;
-  }
+function connectSsh() {
   const user = presetUserEl.value.trim();
   const host = presetHostEl.value.trim();
   if (!user || !host) {
@@ -605,7 +630,67 @@ btnSsh.addEventListener("click", () => {
   spawnShell("SSH " + target, "ssh.exe", args, undefined, 1200).catch((err) => {
     statusEl.textContent = `ошибка запуска: ${err}`;
   });
+}
+
+btnSsh.addEventListener("click", () => {
+  if (pty) {
+    pty.kill().catch((err) => {
+      statusEl.textContent = `ошибка завершения: ${err}`;
+    });
+    // UI полностью сбросится по событию pty-exit (onExit выше), killer только просит
+    // процесс завершиться — ждём подтверждения от wait-потока в Rust.
+    return;
+  }
+  connectSsh();
 });
+
+// ===== Стартовый экран (а-ля PuTTY) =====
+
+const launcherListEl = document.querySelector<HTMLUListElement>("#launcher-list")!;
+const btnLauncherGitBash = document.querySelector<HTMLButtonElement>("#btn-launcher-gitbash")!;
+
+function renderLauncherList() {
+  const presets = loadPresets();
+  launcherListEl.innerHTML = "";
+  if (presets.length === 0) {
+    const li = document.createElement("li");
+    li.className = "launcher-empty";
+    li.textContent = "пока пусто — подключись один раз, предложим сохранить";
+    launcherListEl.appendChild(li);
+    return;
+  }
+  for (const p of presets) {
+    const li = document.createElement("li");
+    li.className = "launcher-preset";
+    li.innerHTML = `
+      <span class="name">${escapeHtml(p.name)}</span>
+      <span class="target">${escapeHtml(p.user)}@${escapeHtml(p.host)}${p.port ? ":" + p.port : ""}</span>
+    `;
+    const del = document.createElement("button");
+    del.className = "launcher-preset-delete";
+    del.textContent = "✕";
+    del.title = "Удалить пресет";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removePreset(p.id);
+      refreshPresetSelect("");
+      clearPresetFields();
+      renderLauncherList();
+    });
+    li.appendChild(del);
+    li.addEventListener("click", () => {
+      refreshPresetSelect(p.id);
+      presetSelectEl.dispatchEvent(new Event("change"));
+      connectSsh();
+    });
+    launcherListEl.appendChild(li);
+  }
+}
+
+btnLauncherGitBash.addEventListener("click", () => btnSpawn.click());
+
+renderLauncherList();
+setSessionActive(false);
 
 btnIntegrate.addEventListener("click", () => injectIntegration());
 

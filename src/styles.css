@@ -244,6 +244,105 @@ textarea:focus {
   flex: 1;
   display: flex;
   min-height: 0;
+  position: relative;
+}
+
+/* ===== Стартовый экран (а-ля PuTTY) — показывается, пока нет активной сессии ===== */
+
+.launcher {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: 5;
+}
+
+.launcher-inner {
+  width: 100%;
+  max-width: 480px;
+  padding: 1.5rem;
+}
+
+.launcher-inner h1 {
+  font-size: 1.3rem;
+  margin: 0 0 0.3rem;
+}
+
+.launcher-hint {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  margin: 0 0 1.2rem;
+}
+
+.launcher-inner h2 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.launcher-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.launcher-list li.launcher-empty {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+.launcher-preset {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.launcher-preset:hover {
+  border-color: var(--accent);
+}
+
+.launcher-preset .name {
+  font-weight: 600;
+}
+
+.launcher-preset .target {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  flex: 1;
+}
+
+.launcher-preset .launcher-preset-delete {
+  padding: 0.1rem 0.45rem;
+}
+
+/* ===== Баннер "сохранить как пресет?" ===== */
+
+.save-prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+
+.save-prompt.hidden {
+  display: none;
 }
 
 /* Режимы интерфейса (ТЗ, разд. "Режимы интерфейса"): MVP — только "Чат" и "Терминал",
@@ -256,6 +355,20 @@ textarea:focus {
 .shell[data-mode="chat"] .pane-chat {
   flex: 1;
   max-width: none;
+}
+
+/* У сессии нет активного подключения — показываем лаунчер, прячем рабочие панели
+   независимо от выбранного режима "Чат"/"Терминал". Идёт ПОСЛЕ правил режима намеренно —
+   при равной специфичности побеждает тот, что ниже по файлу, а идле-сессия должна
+   перебивать режим, а не наоборот. */
+.shell:not([data-session="active"]) .pane-term,
+.shell:not([data-session="active"]) .pane-chat,
+.shell:not([data-session="active"]) .pane-side,
+.shell:not([data-session="active"]) #resizer {
+  display: none;
+}
+.shell[data-session="active"] .launcher {
+  display: none;
 }
 
 /* "Терминал" у нас = терминал + чат рядом (блоки с прикреплёнными ответами агента уже

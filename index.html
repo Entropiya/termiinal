@@ -39,7 +39,27 @@
         <span id="status" class="status">не запущено</span>
       </header>
 
+      <div id="save-prompt" class="save-prompt hidden">
+        <span id="save-prompt-text">Сохранить это подключение как пресет?</span>
+        <button id="btn-save-prompt-yes" class="btn-primary">Сохранить</button>
+        <button id="btn-save-prompt-no">Не сейчас</button>
+      </div>
+
       <div class="panes">
+        <div id="launcher" class="launcher">
+          <div class="launcher-inner">
+            <h1>terminal-mentor</h1>
+            <p class="launcher-hint">
+              Выбери сохранённое подключение — или заполни поля в строке выше и нажми «Подключиться».
+            </p>
+            <h2>Сохранённые подключения</h2>
+            <ul id="launcher-list" class="launcher-list">
+              <li class="launcher-empty">пока пусто — подключись один раз, предложим сохранить</li>
+            </ul>
+            <button id="btn-launcher-gitbash">Git Bash (локально)</button>
+          </div>
+        </div>
+
         <section class="pane pane-term" id="pane-term">
           <h2>Терминал</h2>
           <div id="xterm"></div>
