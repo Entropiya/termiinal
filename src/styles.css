@@ -139,6 +139,46 @@ textarea:focus {
   font-size: 0.8rem;
   color: var(--text-dim);
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--text-dim);
+  flex: none;
+}
+
+.dot-off {
+  background: #5a5c63;
+}
+
+.dot-starting {
+  background: #e0b341;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.dot-on {
+  background: var(--ok);
+  box-shadow: 0 0 6px 0 var(--ok);
+}
+
+.dot-error {
+  background: var(--danger);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* ===== Панели ===== */

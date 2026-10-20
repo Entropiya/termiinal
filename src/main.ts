@@ -11,6 +11,7 @@ import { shouldSendBlock, formatBlocksForAgent, DEFAULT_BLACKLIST, type AgentPol
 import { parseAgentResponse } from "./agent-contract";
 import { renderAgentMarkdown } from "./render-markdown";
 import { loadPresets, upsertPreset, removePreset, type ConnectionPreset } from "./presets";
+import { buildProbeCommand, ProbeCapture, type ProbeResult } from "./host-probe";
 import systemPrompt from "./system-prompt.md?raw";
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
@@ -40,6 +41,11 @@ const btnAgentStop = document.querySelector<HTMLButtonElement>("#btn-agent-stop"
 const agentPolicyEl = document.querySelector<HTMLSelectElement>("#agent-policy")!;
 const btnGlance = document.querySelector<HTMLButtonElement>("#btn-glance")!;
 const agentStatusEl = document.querySelector<HTMLSpanElement>("#agent-status")!;
+const agentDotEl = document.querySelector<HTMLSpanElement>("#agent-dot")!;
+
+function setAgentDot(state: "off" | "starting" | "on" | "error") {
+  agentDotEl.className = `dot dot-${state}`;
+}
 const chatLogEl = document.querySelector<HTMLDivElement>("#chat-log")!;
 const chatFormEl = document.querySelector<HTMLFormElement>("#chat-form")!;
 const chatInputEl = document.querySelector<HTMLTextAreaElement>("#chat-input")!;
@@ -112,13 +118,29 @@ let pendingKind: "chat" | "blocks" | null = null;
 let pendingBlocksCount = 0;
 let lastClosedBlock: Block | null = null;
 let currentSessionLabel: string | null = null;
+let sessionOsInfo: { osId: string | null; osVersionId: string | null } | null = null;
+let probeCapture: ProbeCapture | null = null;
+
+function handleProbeResult(r: ProbeResult | null) {
+  probeCapture = null;
+  if (!r) return;
+  sessionOsInfo = { osId: r.osId, osVersionId: r.osVersionId };
+  // "им по умолчанию называется пресет" (ТЗ) — только если пользователь ещё не вписал
+  // своё имя вручную, не перетираем уже набранное.
+  if (r.hostname && !presetNameEl.value.trim()) presetNameEl.value = r.hostname;
+  addChatMessage(
+    "system",
+    `Проба хоста: шелл=${r.shellPath ?? "?"} хост=${r.hostname ?? "?"} ОС=${r.osId ?? "?"} ${r.osVersionId ?? ""}`.trim(),
+  );
+}
 
 /** Короткая строка контекста, которую агент видит в КАЖДОМ сообщении (и блоке, и чате).
  * Без неё агент не знает, что перед ним — локальный Windows (Git Bash) или удалённый
  * Linux/Unix по ssh, и начинает советовать `ipconfig`/PowerShell там, где нужен `ip a`. */
 function contextLine(): string {
   if (!currentSessionLabel) return "[Контекст] активной сессии в терминале нет.";
-  return `[Контекст] активная сессия: ${currentSessionLabel}.`;
+  const os = sessionOsInfo?.osId ? ` ОС: ${sessionOsInfo.osId} ${sessionOsInfo.osVersionId ?? ""}`.trim() : "";
+  return `[Контекст] активная сессия: ${currentSessionLabel}.${os ? ` ${os}.` : ""}`;
 }
 
 agentPolicyEl.addEventListener("change", () => {
@@ -156,9 +178,17 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-async function spawnShell(label: string, program: string, args: string[], env?: Record<string, string>) {
+async function spawnShell(
+  label: string,
+  program: string,
+  args: string[],
+  env?: Record<string, string>,
+  probeAfterMs?: number,
+) {
   statusEl.textContent = `${label}: запускается…`;
   currentSessionLabel = label;
+  sessionOsInfo = null;
+  probeCapture = null;
   const cols = term.cols;
   const rows = term.rows;
 
@@ -180,6 +210,14 @@ async function spawnShell(label: string, program: string, args: string[], env?: 
     cols,
     rows,
     onData: (bytes) => {
+      // Пока идёт скрытая проба хоста — ни видимый терминал, ни headless-копия её не
+      // видят. Обязательно решаем одинаково для обоих: иначе их буферы разойдутся по
+      // номерам строк, на которых держится нарезка на блоки (см. BlockBuilder).
+      if (probeCapture && !probeCapture.done) {
+        probeCapture.feed(bytes);
+        if (probeCapture.done) handleProbeResult(probeCapture.result());
+        return;
+      }
       term.write(bytes);
       blockBuilder?.feed(bytes);
     },
@@ -193,6 +231,8 @@ async function spawnShell(label: string, program: string, args: string[], env?: 
       btnSsh.disabled = false;
       pty = null;
       currentSessionLabel = null;
+      sessionOsInfo = null;
+      probeCapture = null;
     },
   });
 
@@ -208,6 +248,17 @@ async function spawnShell(label: string, program: string, args: string[], env?: 
   btnSpawn.disabled = true;
   btnSsh.disabled = true;
   term.focus();
+
+  if (probeAfterMs !== undefined) {
+    // Эвристика вместо честного "дождались пустого промпта" (та детекция — отдельная,
+    // более поздняя фича): просто ждём немного, чтобы баннер логина и промпт успели
+    // отрисоваться, прежде чем втихую впечатать пробу.
+    setTimeout(() => {
+      if (!pty) return;
+      probeCapture = new ProbeCapture();
+      pty.write(buildProbeCommand() + "\r");
+    }, probeAfterMs);
+  }
 }
 
 btnKill.addEventListener("click", () => {
@@ -306,7 +357,7 @@ btnSsh.addEventListener("click", () => {
   args.push(target);
   // Без -o StrictHostKeyChecking — подтверждение отпечатка хоста при первом подключении
   // идёт через обычный диалог ssh прямо в терминале, как и описано в ТЗ.
-  spawnShell("SSH " + target, "ssh.exe", args).catch((err) => {
+  spawnShell("SSH " + target, "ssh.exe", args, undefined, 1200).catch((err) => {
     statusEl.textContent = `ошибка запуска: ${err}`;
   });
 });
@@ -393,6 +444,7 @@ function trySendPending() {
 
 btnAgentStart.addEventListener("click", async () => {
   agentStatusEl.textContent = "запускается…";
+  setAgentDot("starting");
   try {
     agent = await startAgent({
       systemPrompt,
@@ -403,6 +455,7 @@ btnAgentStart.addEventListener("click", async () => {
       callbacks: {
         onInit: (e) => {
           const isolated = e.tools.length === 0 && e.mcp_servers.length === 0;
+          setAgentDot(isolated ? "on" : "error");
           agentStatusEl.textContent = `${e.model} · изоляция: ${isolated ? "подтверждена (0 инструментов)" : `⚠ ${e.tools.length} инстр./${e.mcp_servers.length} MCP`} · $${sessionCostUsd.toFixed(4)}`;
           addChatMessage(
             "system",
@@ -455,6 +508,7 @@ btnAgentStart.addEventListener("click", async () => {
         },
         onExit: (code) => {
           agentStatusEl.textContent = `процесс завершён (код ${code ?? "?"})`;
+          setAgentDot("off");
           agent = null;
           agentBusy = false;
           pendingKind = null;
@@ -466,6 +520,7 @@ btnAgentStart.addEventListener("click", async () => {
     setAgentActive(true);
   } catch (err) {
     agentStatusEl.textContent = `ошибка запуска: ${err}`;
+    setAgentDot("error");
   }
 });
 
