@@ -457,6 +457,39 @@ textarea:focus {
   max-width: 420px;
   border-left: 1px solid var(--border-soft);
   background: var(--surface);
+  transition: flex-basis 0.15s ease;
+}
+
+.side-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.side-header h2 {
+  margin: 0;
+}
+
+.side-toggle {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+/* Свёрнутое состояние ("даём панели возможность свернуться в бок") — узкая полоска,
+   видна только кнопка разворота, содержимое и ширина не тратятся зря. */
+.pane-side.collapsed {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+  width: 2.2rem;
+  padding: 0.7rem 0.4rem;
+  overflow: hidden;
+}
+
+.pane-side.collapsed .side-header h2,
+.pane-side.collapsed .blocks {
+  display: none;
 }
 
 .blocks {

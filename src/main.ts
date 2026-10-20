@@ -52,8 +52,23 @@ const presetKeyEl = document.querySelector<HTMLInputElement>("#preset-key")!;
 const btnPresetSave = document.querySelector<HTMLButtonElement>("#btn-preset-save")!;
 const btnPresetDelete = document.querySelector<HTMLButtonElement>("#btn-preset-delete")!;
 const btnIntegrate = document.querySelector<HTMLButtonElement>("#btn-integrate")!;
-const btnKill = document.querySelector<HTMLButtonElement>("#btn-kill")!;
 const blocksEl = document.querySelector<HTMLDivElement>("#blocks")!;
+const paneSideEl = document.querySelector<HTMLElement>("#pane-side")!;
+const btnSideToggle = document.querySelector<HTMLButtonElement>("#btn-side-toggle")!;
+
+const SIDE_COLLAPSED_KEY = "terminal-mentor:side-collapsed";
+
+function setSideCollapsed(collapsed: boolean) {
+  paneSideEl.classList.toggle("collapsed", collapsed);
+  btnSideToggle.textContent = collapsed ? "⟨" : "⟩";
+  localStorage.setItem(SIDE_COLLAPSED_KEY, collapsed ? "1" : "0");
+}
+
+btnSideToggle.addEventListener("click", () => {
+  setSideCollapsed(!paneSideEl.classList.contains("collapsed"));
+});
+
+setSideCollapsed(localStorage.getItem(SIDE_COLLAPSED_KEY) === "1");
 
 const btnAgentStart = document.querySelector<HTMLButtonElement>("#btn-agent-start")!;
 const btnAgentStop = document.querySelector<HTMLButtonElement>("#btn-agent-stop")!;
@@ -438,10 +453,7 @@ async function spawnShell(
     },
     onExit: (code) => {
       statusEl.textContent = `${label}: процесс завершён (код ${code ?? "?"})`;
-      btnIntegrate.disabled = true;
-      btnKill.disabled = true;
-      btnSpawn.disabled = false;
-      btnSsh.disabled = false;
+      setSessionActive(false);
       pty = null;
       currentSessionLabel = null;
       sessionOsInfo = null;
@@ -458,10 +470,7 @@ async function spawnShell(
   });
 
   statusEl.textContent = `сессия активна — ${label}`;
-  btnIntegrate.disabled = false;
-  btnKill.disabled = false;
-  btnSpawn.disabled = true;
-  btnSsh.disabled = true;
+  setSessionActive(true);
   term.focus();
 
   if (probeAfterMs !== undefined) {
@@ -476,13 +485,15 @@ async function spawnShell(
   }
 }
 
-btnKill.addEventListener("click", () => {
-  pty?.kill().catch((err) => {
-    statusEl.textContent = `ошибка завершения: ${err}`;
-  });
-  // UI полностью сбросится по событию pty-exit (onExit выше), killer только просит
-  // процесс завершиться — ждём подтверждения от wait-потока в Rust.
-});
+// Отдельная кнопка "Завершить сессию" не нужна, пока сессии нет — "Подключиться"
+// сама становится "Завершить сессию", пока она активна (см. btnSsh ниже).
+function setSessionActive(active: boolean) {
+  btnIntegrate.disabled = !active;
+  btnSpawn.disabled = active;
+  btnSsh.textContent = active ? "Завершить сессию" : "Подключиться";
+  btnSsh.classList.toggle("btn-primary", !active);
+  btnSsh.classList.toggle("btn-danger", active);
+}
 
 btnSpawn.addEventListener("click", () => {
   spawnShell("Git Bash", GIT_BASH, ["--login", "-i"], {
@@ -571,6 +582,14 @@ btnPresetDelete.addEventListener("click", () => {
 refreshPresetSelect();
 
 btnSsh.addEventListener("click", () => {
+  if (pty) {
+    pty.kill().catch((err) => {
+      statusEl.textContent = `ошибка завершения: ${err}`;
+    });
+    // UI полностью сбросится по событию pty-exit (onExit выше), killer только просит
+    // процесс завершиться — ждём подтверждения от wait-потока в Rust.
+    return;
+  }
   const user = presetUserEl.value.trim();
   const host = presetHostEl.value.trim();
   if (!user || !host) {

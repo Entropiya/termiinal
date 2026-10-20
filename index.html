@@ -36,7 +36,6 @@
           </div>
         </details>
 
-        <button id="btn-kill" disabled class="btn-danger">Завершить сессию</button>
         <span id="status" class="status">не запущено</span>
       </header>
 
@@ -79,8 +78,11 @@
           </form>
         </section>
 
-        <section class="pane pane-side">
-          <h2>Блоки</h2>
+        <section class="pane pane-side" id="pane-side">
+          <div class="side-header">
+            <button id="btn-side-toggle" class="side-toggle" title="Свернуть/развернуть">⟩</button>
+            <h2>Блоки</h2>
+          </div>
           <div id="blocks" class="blocks"></div>
         </section>
       </div>
