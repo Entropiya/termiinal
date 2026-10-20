@@ -29,9 +29,7 @@
         <button id="btn-preset-delete" disabled title="Удалить выбранный пресет">✕</button>
       </header>
       <header class="toolbar">
-        <button id="btn-integrate" disabled>Внедрить интеграцию</button>
-        <button id="btn-history" disabled>Проверить историю</button>
-        <button id="btn-progress" disabled>Тест \r-перерисовки</button>
+        <button id="btn-integrate" disabled title="Внедрить OSC-хуки для нарезки на блоки в этой сессии">Внедрить интеграцию</button>
         <button id="btn-kill" disabled class="btn-danger">Завершить сессию</button>
         <span id="status" class="status">не запущено</span>
       </header>
@@ -69,14 +67,8 @@
         </section>
 
         <section class="pane pane-side">
-          <h2>Чек-лист этапа 1</h2>
-          <ul id="checklist" class="checklist"></ul>
-
-          <h2>Блоки (из headless-рендера)</h2>
+          <h2>Блоки</h2>
           <div id="blocks" class="blocks"></div>
-
-          <h2>Сырые OSC-события</h2>
-          <div id="osc-log" class="osc-log"></div>
         </section>
       </div>
     </main>

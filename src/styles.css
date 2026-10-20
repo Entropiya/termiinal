@@ -200,9 +200,10 @@ textarea:focus {
   max-width: none;
 }
 
-.shell[data-mode="terminal"] .pane-chat {
-  display: none;
-}
+/* "Терминал" у нас = терминал + чат рядом (блоки с прикреплёнными ответами агента уже
+   показывают сворачиваемый разбор под командой, а живой чат остаётся видимым для
+   самого диалога — чистый "дистанционный" режим без чата ещё предстоит спроектировать
+   отдельно, если понадобится буквально по ТЗ). Отдельной панели не прячем. */
 
 .pane {
   padding: 0.7rem 0.9rem;
@@ -376,40 +377,9 @@ textarea:focus {
   background: var(--surface);
 }
 
-.checklist {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 0.82rem;
-}
-
-.checklist li {
-  padding: 0.25rem 0.1rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.checklist li:hover {
-  background: var(--surface-2);
-}
-
-.checklist .pending::before {
-  content: "☐ ";
-  color: var(--text-dim);
-}
-
-.checklist .ok::before {
-  content: "✅ ";
-}
-
-.checklist .ok {
-  color: var(--ok);
-}
-
-.blocks,
-.osc-log {
+.blocks {
   font-size: 0.76rem;
-  max-height: 30vh;
+  max-height: 75vh;
   overflow: auto;
   background: var(--surface-sunken);
   border: 1px solid var(--border);
@@ -440,9 +410,6 @@ textarea:focus {
   margin: 0.2rem 0 0;
 }
 
-.osc-log div {
-  color: var(--text-dim);
-}
 
 /* Ответ агента, прикреплённый под своим блоком (режим "Терминал", ТЗ) */
 .block-reply {

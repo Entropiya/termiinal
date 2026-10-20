@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 
 import { spawnPty, type PtyHandle } from "./pty";
-import { BlockBuilder, type Block, type OscLogEntry } from "./osc-blocks";
+import { BlockBuilder, type Block } from "./osc-blocks";
 import { buildIntegrationLine } from "./shell-integration";
 import { startAgent, type AgentHandle } from "./agent";
 import { redactSecrets } from "./redact";
@@ -43,12 +43,8 @@ const presetKeyEl = document.querySelector<HTMLInputElement>("#preset-key")!;
 const btnPresetSave = document.querySelector<HTMLButtonElement>("#btn-preset-save")!;
 const btnPresetDelete = document.querySelector<HTMLButtonElement>("#btn-preset-delete")!;
 const btnIntegrate = document.querySelector<HTMLButtonElement>("#btn-integrate")!;
-const btnHistory = document.querySelector<HTMLButtonElement>("#btn-history")!;
-const btnProgress = document.querySelector<HTMLButtonElement>("#btn-progress")!;
 const btnKill = document.querySelector<HTMLButtonElement>("#btn-kill")!;
 const blocksEl = document.querySelector<HTMLDivElement>("#blocks")!;
-const oscLogEl = document.querySelector<HTMLDivElement>("#osc-log")!;
-const checklistEl = document.querySelector<HTMLUListElement>("#checklist")!;
 
 const btnAgentStart = document.querySelector<HTMLButtonElement>("#btn-agent-start")!;
 const btnAgentStop = document.querySelector<HTMLButtonElement>("#btn-agent-stop")!;
@@ -65,25 +61,10 @@ const chatFormEl = document.querySelector<HTMLFormElement>("#chat-form")!;
 const chatInputEl = document.querySelector<HTMLTextAreaElement>("#chat-input")!;
 const chatSendEl = document.querySelector<HTMLButtonElement>("#chat-send")!;
 
-const CHECKLIST: { id: string; text: string }[] = [
-  { id: "osc-intact", text: "OSC 133/633/7 доходят целыми через ConPTY (см. блоки и OSC-лог)" },
-  { id: "cmd-text", text: "Текст команды (OSC 633 E) совпадает с реально выполненной после Tab/↑" },
-  { id: "history-clean", text: "Строка интеграции самоудалилась из истории (history)" },
-  { id: "redraw-clean", text: "Headless-рендер даёт чистый текст при \\r-перерисовке (прогресс-бар)" },
-];
-
-for (const item of CHECKLIST) {
-  const li = document.createElement("li");
-  li.className = "pending";
-  li.dataset.id = item.id;
-  li.textContent = item.text;
-  li.title = "Клик — отметить как проверено вручную";
-  li.addEventListener("click", () => {
-    li.classList.toggle("ok");
-    li.classList.toggle("pending");
-  });
-  checklistEl.appendChild(li);
-}
+// Чек-лист риск-прототипа и сырой OSC-лог (этап 1) убраны из основного интерфейса —
+// своё дело они сделали, результат задокументирован в docs/stage1.md. BlockBuilder
+// по-прежнему пишет весь OSC-поток в .oscLog (поле класса) на случай будущей отладки,
+// просто это больше не рендерится отдельной панелью.
 
 const term = new Terminal({
   fontFamily: "'Cascadia Code', Consolas, monospace",
@@ -315,12 +296,6 @@ function attachResponseToBlock(batch: Block[], parsed: ReturnType<typeof parseAg
   el.appendChild(wrapper);
 }
 
-function renderOsc(e: OscLogEntry) {
-  const div = document.createElement("div");
-  div.textContent = `OSC ${e.kind} ; ${e.raw}`;
-  oscLogEl.prepend(div);
-}
-
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
@@ -348,8 +323,6 @@ async function spawnShell(
       trySendPending();
     }
   };
-  blockBuilder.onOscEvent = renderOsc;
-
   pty = await spawnPty({
     program,
     args,
@@ -371,8 +344,6 @@ async function spawnShell(
     onExit: (code) => {
       statusEl.textContent = `${label}: процесс завершён (код ${code ?? "?"})`;
       btnIntegrate.disabled = true;
-      btnHistory.disabled = true;
-      btnProgress.disabled = true;
       btnKill.disabled = true;
       btnSpawn.disabled = false;
       btnSsh.disabled = false;
@@ -385,8 +356,6 @@ async function spawnShell(
 
   statusEl.textContent = `сессия активна — ${label}`;
   btnIntegrate.disabled = false;
-  btnHistory.disabled = false;
-  btnProgress.disabled = false;
   btnKill.disabled = false;
   btnSpawn.disabled = true;
   btnSsh.disabled = true;
@@ -521,16 +490,6 @@ btnSsh.addEventListener("click", () => {
 btnIntegrate.addEventListener("click", () => {
   const line = buildIntegrationLine();
   pty?.write(line + "\r");
-});
-
-btnHistory.addEventListener("click", () => {
-  pty?.write("history\r");
-});
-
-btnProgress.addEventListener("click", () => {
-  const cmd =
-    "for i in $(seq 1 20); do printf '\\rprogress: %3d%%' \"$((i*5))\"; sleep 0.05; done; printf '\\n'; echo PROGRESS_DONE";
-  pty?.write(cmd + "\r");
 });
 
 window.addEventListener("resize", () => {
