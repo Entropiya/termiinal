@@ -7,7 +7,7 @@
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use parking_lot::Mutex;
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -16,7 +16,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub struct PtySession {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
-    child: Box<dyn Child + Send + Sync>,
+    // Только "убийца", а не сам Child: Child.wait() блокируется на всё время жизни
+    // процесса, и если держать Child в этой же мапе, поток ожидания был бы вынужден
+    // держать блокировку состояния все это время — см. комментарий у wait-потока ниже.
+    killer: Box<dyn ChildKiller + Send + Sync>,
 }
 
 #[derive(Default)]
@@ -44,6 +47,7 @@ pub fn pty_spawn(
     program: String,
     args: Vec<String>,
     cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
     cols: u16,
     rows: u16,
 ) -> Result<String, String> {
@@ -62,11 +66,17 @@ pub fn pty_spawn(
     if let Some(dir) = cwd {
         cmd.cwd(dir);
     }
+    if let Some(vars) = env {
+        for (k, v) in vars {
+            cmd.env(k, v);
+        }
+    }
 
-    let child = pair
+    let mut child = pair
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("spawn {program}: {e}"))?;
+    let killer = child.clone_killer();
 
     // На Windows слейв-хэндл после spawn больше не нужен приложению.
     drop(pair.slave);
@@ -89,7 +99,7 @@ pub fn pty_spawn(
             PtySession {
                 master: pair.master,
                 writer,
-                child,
+                killer,
             },
         );
     }
@@ -118,21 +128,19 @@ pub fn pty_spawn(
         }
     });
 
-    // Отдельный поток ждёт завершения процесса (read-поток выше завершится раньше,
-    // как только ConPTY закроет хвост, но код возврата доступен только через wait()).
+    // Отдельный поток ждёт завершения процесса. ВАЖНО: `child.wait()` блокируется на
+    // всё время жизни сессии (часы), поэтому `child` передаётся сюда НАПРЯМУЮ, во
+    // владение потока, а не через общую `PtyState` — иначе пришлось бы держать общий
+    // мьютекс залоченным всё это время, и любой pty_write/pty_resize (а значит и
+    // каждое нажатие клавиши) блокировался бы намертво до закрытия сессии. Именно
+    // этот баг вызывал зависание всего приложения после спавна первой же сессии.
     let wait_app = app.clone();
     let wait_id = id.clone();
     std::thread::spawn(move || {
-        // Код возврата снимаем через повторный lock состояния приложения.
-        let app_state = wait_app.state::<PtyState>();
-        let code = {
-            let mut map = app_state.0.lock();
-            if let Some(session) = map.get_mut(&wait_id) {
-                session.child.wait().ok().map(|s| s.exit_code())
-            } else {
-                None
-            }
-        };
+        let code = child.wait().ok().map(|s| s.exit_code());
+        // Сессии больше нет — подчищаем общую мапу (master/writer больше не нужны).
+        // Лочим только здесь и только на короткую операцию remove(), не на время wait().
+        wait_app.state::<PtyState>().0.lock().remove(&wait_id);
         let _ = wait_app.emit(
             "pty-exit",
             PtyExitPayload {
@@ -173,9 +181,13 @@ pub fn pty_resize(state: State<'_, PtyState>, id: String, cols: u16, rows: u16) 
 
 #[tauri::command]
 pub fn pty_kill(state: State<'_, PtyState>, id: String) -> Result<(), String> {
-    let mut map = state.0.lock();
-    if let Some(mut session) = map.remove(&id) {
-        session.child.kill().map_err(|e| format!("kill: {e}"))?;
-    }
-    Ok(())
+    // Сессию из мапы не убираем здесь: это сделает wait-поток сам, когда увидит,
+    // что процесс действительно завершился (kill() только посылает сигнал/запрос).
+    let map = state.0.lock();
+    let session = map.get(&id).ok_or("unknown pty session")?;
+    // `kill()` у ChildKiller требует `&mut self`; клонируем killer, чтобы не держать
+    // мьютекс заблокированным на время самого системного вызова завершения процесса.
+    let mut killer = session.killer.clone_killer();
+    drop(map);
+    killer.kill().map_err(|e| format!("kill: {e}"))
 }

@@ -24,6 +24,7 @@ export async function spawnPty(opts: {
   program: string;
   args?: string[];
   cwd?: string;
+  env?: Record<string, string>;
   cols: number;
   rows: number;
   onData: (bytes: Uint8Array) => void;
@@ -33,6 +34,7 @@ export async function spawnPty(opts: {
     program: opts.program,
     args: opts.args ?? [],
     cwd: opts.cwd ?? null,
+    env: opts.env ?? null,
     cols: opts.cols,
     rows: opts.rows,
   });

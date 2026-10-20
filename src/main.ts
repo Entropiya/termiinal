@@ -48,6 +48,24 @@ term.loadAddon(fitAddon);
 term.open(document.querySelector<HTMLDivElement>("#xterm")!);
 fitAddon.fit();
 
+// Копирование выделенного текста — своего буфера обмена у xterm.js нет, браузер его
+// не даёт просто так. Копируем автоматически по выделению (как в большинстве
+// терминалов) и по Ctrl+C, если что-то выделено (иначе Ctrl+C должен уйти в шелл как ^C).
+term.onSelectionChange(() => {
+  const sel = term.getSelection();
+  if (sel) navigator.clipboard.writeText(sel).catch(() => {});
+});
+term.attachCustomKeyEventHandler((event) => {
+  if (event.type === "keydown" && event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "c") {
+    const sel = term.getSelection();
+    if (sel) {
+      navigator.clipboard.writeText(sel).catch(() => {});
+      return false; // подавляем отправку ^C в шелл, раз это было копирование
+    }
+  }
+  return true;
+});
+
 let pty: (PtyHandle & { dispose(): void }) | null = null;
 let blockBuilder: BlockBuilder | null = null;
 
@@ -84,6 +102,11 @@ async function spawn() {
   pty = await spawnPty({
     program: GIT_BASH,
     args: ["--login", "-i"],
+    // MSYS-рантайм git-bash по умолчанию не знает про ConPTY и ведёт себя так, будто
+    // его вывод никуда не подключён как терминал — отсюда битые Tab/история/стрелки.
+    // enable_pcon — задокументированный флаг MSYS2 именно для работы под ConPTY
+    // (тот же трюк использует Windows Terminal для профиля Git Bash).
+    env: { MSYS: "enable_pcon", MSYS2_PTY: "1" },
     cols,
     rows,
     onData: (bytes) => {
