@@ -12,7 +12,19 @@ import { parseAgentResponse } from "./agent-contract";
 import { renderAgentMarkdown } from "./render-markdown";
 import { loadPresets, upsertPreset, removePreset, type ConnectionPreset } from "./presets";
 import { buildProbeCommand, ProbeCapture, type ProbeResult } from "./host-probe";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import systemPrompt from "./system-prompt.md?raw";
+
+// ТЗ, разд. "Закрытие Tauri": "ссылки из ответов открываются только во внешнем браузере".
+// Единственное место, откуда вообще могут взяться <a>-ссылки — markdown-рендер ответа
+// агента (src/render-markdown.ts); перехватываем все клики по ним на уровне документа,
+// а не точечно в чате, чтобы не зависеть от того, где именно такая ссылка окажется.
+document.addEventListener("click", (e) => {
+  const a = (e.target as HTMLElement).closest?.("a[href]");
+  if (!a) return;
+  e.preventDefault();
+  openUrl(a.getAttribute("href")!).catch(() => {});
+});
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
 const DEFAULT_SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
