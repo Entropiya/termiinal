@@ -26,6 +26,15 @@ document.addEventListener("click", (e) => {
   openUrl(a.getAttribute("href")!).catch(() => {});
 });
 
+// Закрывать выпадающие меню («Дополнительно», меню агента) при клике вне них — иначе
+// <details> остаётся открытым поверх интерфейса, пока не кликнешь по summary ещё раз.
+document.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  document.querySelectorAll<HTMLDetailsElement>("details.dropdown[open]").forEach((d) => {
+    if (!d.contains(target)) d.removeAttribute("open");
+  });
+});
+
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
 const DEFAULT_SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
 
@@ -175,10 +184,25 @@ function scheduleProbeTrailingEnd() {
     probeTrailingTimer = null;
     if (pendingAutoIntegration) {
       pendingAutoIntegration = false;
-      pty?.write(buildIntegrationLine() + "\r");
-      addChatMessage("system", "Интеграция внедрена автоматически (hostname опознан).");
+      injectIntegration("Интеграция внедрена автоматически (hostname опознан).");
     }
   }, 250);
+}
+
+// Строка интеграции — служебная деталь реализации, печатать её на экран пользователю
+// незачем (а после фикса ESC-байтов из этапа 2 она ещё и читается как есть, длинная и
+// нечитаемая на глаз). Прячем её собственное эхо так же, как прячем пробу — только
+// граница точная: эхо набранной строки заканчивается первым же переводом строки
+// (тем, что отправляет сама ssh/bash, когда получает Enter), в отличие от пробы, где
+// точных маркеров начала/конца у нас не было.
+let hidingIntegrationEcho = false;
+let hideEchoDecoder: TextDecoder | null = null;
+
+function injectIntegration(note?: string) {
+  hidingIntegrationEcho = true;
+  hideEchoDecoder = new TextDecoder();
+  pty?.write(buildIntegrationLine() + "\r");
+  if (note) addChatMessage("system", note);
 }
 
 // ===== Кому адресован ввод (ТЗ, разд. "Режимы интерфейса") =====
@@ -353,6 +377,8 @@ async function spawnShell(
   probeCapture = null;
   probeTrailingSuppress = false;
   pendingAutoIntegration = false;
+  hidingIntegrationEcho = false;
+  hideEchoDecoder = null;
   if (probeTrailingTimer) {
     clearTimeout(probeTrailingTimer);
     probeTrailingTimer = null;
@@ -394,6 +420,19 @@ async function spawnShell(
         scheduleProbeTrailingEnd();
         return;
       }
+      if (hidingIntegrationEcho) {
+        const text = hideEchoDecoder!.decode(bytes, { stream: true });
+        const nlIdx = text.indexOf("\n");
+        if (nlIdx === -1) return; // конец набранной строки ещё не пришёл — молчим
+        hidingIntegrationEcho = false;
+        hideEchoDecoder = null;
+        const visible = text.slice(nlIdx + 1);
+        if (visible) {
+          term.write(visible);
+          blockBuilder?.feed(new TextEncoder().encode(visible));
+        }
+        return;
+      }
       term.write(bytes);
       blockBuilder?.feed(bytes);
     },
@@ -409,6 +448,8 @@ async function spawnShell(
       probeCapture = null;
       probeTrailingSuppress = false;
       pendingAutoIntegration = false;
+      hidingIntegrationEcho = false;
+      hideEchoDecoder = null;
       if (probeTrailingTimer) {
         clearTimeout(probeTrailingTimer);
         probeTrailingTimer = null;
@@ -549,17 +590,51 @@ btnSsh.addEventListener("click", () => {
   });
 });
 
-btnIntegrate.addEventListener("click", () => {
-  const line = buildIntegrationLine();
-  pty?.write(line + "\r");
-});
+btnIntegrate.addEventListener("click", () => injectIntegration());
 
-window.addEventListener("resize", () => {
+function syncTermSize() {
   fitAddon.fit();
   const cols = term.cols;
   const rows = term.rows;
   pty?.resize(cols, rows);
   blockBuilder?.resize(cols, rows);
+}
+
+window.addEventListener("resize", syncTermSize);
+
+// ===== Перетаскиваемая граница терминал/чат =====
+const paneTermEl = document.querySelector<HTMLElement>("#pane-term")!;
+const resizerEl = document.querySelector<HTMLDivElement>("#resizer")!;
+const TERM_WIDTH_KEY = "terminal-mentor:term-width-px";
+
+const savedTermWidth = localStorage.getItem(TERM_WIDTH_KEY);
+if (savedTermWidth) {
+  paneTermEl.style.flex = `0 0 ${savedTermWidth}px`;
+  requestAnimationFrame(syncTermSize);
+}
+
+let resizingPanes = false;
+resizerEl.addEventListener("mousedown", (e) => {
+  resizingPanes = true;
+  resizerEl.classList.add("dragging");
+  document.body.style.userSelect = "none";
+  e.preventDefault();
+});
+window.addEventListener("mousemove", (e) => {
+  if (!resizingPanes) return;
+  const panesRect = paneTermEl.parentElement!.getBoundingClientRect();
+  const minWidth = 240;
+  const maxWidth = panesRect.width - 280 - 6; // место под чат + сам разделитель
+  const width = Math.max(minWidth, Math.min(maxWidth, e.clientX - panesRect.left));
+  paneTermEl.style.flex = `0 0 ${width}px`;
+  syncTermSize();
+});
+window.addEventListener("mouseup", () => {
+  if (!resizingPanes) return;
+  resizingPanes = false;
+  resizerEl.classList.remove("dragging");
+  document.body.style.userSelect = "";
+  localStorage.setItem(TERM_WIDTH_KEY, String(Math.round(paneTermEl.getBoundingClientRect().width)));
 });
 
 // ===== Агент (Claude) =====

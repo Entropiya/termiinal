@@ -13,8 +13,6 @@
       <header class="toolbar toolbar-connect">
         <button id="btn-mode" title="Ctrl+Shift+M — переключить режим">Режим: Терминал</button>
         <span class="sep"></span>
-        <button id="btn-spawn" class="btn-primary">Git Bash</button>
-        <span class="sep"></span>
         <select id="preset-select" title="Сохранённые подключения">
           <option value="">— новое подключение —</option>
         </select>
@@ -27,38 +25,53 @@
         <button id="btn-ssh" class="btn-primary">Подключиться</button>
         <button id="btn-preset-save" title="Сохранить текущие поля как пресет">Сохранить</button>
         <button id="btn-preset-delete" disabled title="Удалить выбранный пресет">✕</button>
-      </header>
-      <header class="toolbar">
-        <button id="btn-integrate" disabled title="Внедрить OSC-хуки для нарезки на блоки в этой сессии">Внедрить интеграцию</button>
+
+        <details class="dropdown">
+          <summary>Дополнительно ▾</summary>
+          <div class="dropdown-menu">
+            <button id="btn-spawn">Git Bash (локально)</button>
+            <button id="btn-integrate" disabled title="Внедрить OSC-хуки для нарезки на блоки в этой сессии">
+              Внедрить интеграцию вручную
+            </button>
+          </div>
+        </details>
+
         <button id="btn-kill" disabled class="btn-danger">Завершить сессию</button>
         <span id="status" class="status">не запущено</span>
       </header>
-      <header class="toolbar">
-        <button id="btn-agent-start" class="btn-primary">Запустить агента</button>
-        <button id="btn-agent-stop" disabled class="btn-danger">Остановить агента</button>
-        <label class="policy-label">
-          Политика
-          <select id="agent-policy">
-            <option value="auto" selected>Авто</option>
-            <option value="errors-only">Только ошибки</option>
-            <option value="manual">Вручную</option>
-          </select>
-        </label>
-        <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">👁 Глянь</button>
-        <span class="status">
-          <span id="agent-dot" class="dot dot-off"></span>
-          <span id="agent-status">не запущен</span>
-        </span>
-      </header>
 
       <div class="panes">
-        <section class="pane pane-term">
+        <section class="pane pane-term" id="pane-term">
           <h2>Терминал</h2>
           <div id="xterm"></div>
         </section>
 
+        <div class="resizer" id="resizer" title="Перетащи, чтобы изменить соотношение"></div>
+
         <section class="pane pane-chat">
-          <h2>Чат с агентом</h2>
+          <div class="chat-header">
+            <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">👁 Глянь</button>
+            <h2>Чат с агентом</h2>
+            <span class="status">
+              <span id="agent-dot" class="dot dot-off"></span>
+              <span id="agent-status">не запущен</span>
+            </span>
+            <details class="dropdown dropdown-right">
+              <summary title="Управление агентом">⋮</summary>
+              <div class="dropdown-menu">
+                <button id="btn-agent-start" class="btn-primary">Запустить агента</button>
+                <button id="btn-agent-stop" disabled class="btn-danger">Остановить агента</button>
+                <label class="policy-label">
+                  Политика
+                  <select id="agent-policy">
+                    <option value="auto" selected>Авто</option>
+                    <option value="errors-only">Только ошибки</option>
+                    <option value="manual">Вручную</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </div>
           <div id="chat-log" class="chat-log"></div>
           <form id="chat-form" class="chat-form">
             <textarea id="chat-input" rows="2" placeholder="Сообщение агенту…" disabled></textarea>

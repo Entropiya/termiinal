@@ -73,6 +73,63 @@ body {
   color: var(--text-dim);
 }
 
+/* ===== Выпадающие меню (редкоиспользуемые/вспомогательные действия) ===== */
+
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.dropdown summary:hover {
+  background: #2e3035;
+  border-color: #44464c;
+}
+
+.dropdown[open] summary {
+  border-color: var(--accent);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 220px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.dropdown-right .dropdown-menu {
+  left: auto;
+  right: 0;
+}
+
+.dropdown-menu button {
+  width: 100%;
+  text-align: left;
+}
+
 /* ===== Элементы управления ===== */
 
 button {
@@ -192,7 +249,8 @@ textarea:focus {
 /* Режимы интерфейса (ТЗ, разд. "Режимы интерфейса"): MVP — только "Чат" и "Терминал",
    "Сплит" (оба сразу, текущее поведение по умолчанию) — следующий этап. */
 .shell[data-mode="chat"] .pane-term,
-.shell[data-mode="chat"] .pane-side {
+.shell[data-mode="chat"] .pane-side,
+.shell[data-mode="chat"] #resizer {
   display: none;
 }
 .shell[data-mode="chat"] .pane-chat {
@@ -231,11 +289,25 @@ textarea:focus {
 }
 
 .pane-term {
-  flex: 2;
-  min-width: 0;
+  flex: 1 1 50%;
+  min-width: 240px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
+}
+
+/* Ширину задаёт JS через inline flex (см. #resizer в main.ts) — тут только дефолт
+   и нижняя граница, чтобы терминал не схлопнулся в ноль при перетаскивании. */
+.resizer {
+  width: 6px;
+  flex: none;
+  cursor: col-resize;
+  background: var(--border-soft);
+}
+
+.resizer:hover,
+.resizer.dragging {
+  background: var(--accent);
 }
 
 #xterm {
@@ -246,13 +318,23 @@ textarea:focus {
 }
 
 .pane-chat {
-  flex: 1.3;
-  min-width: 320px;
-  max-width: 520px;
-  border-left: 1px solid var(--border-soft);
+  flex: 1 1 auto;
+  min-width: 280px;
   background: var(--surface);
   display: flex;
   flex-direction: column;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat-header h2 {
+  margin: 0;
+  flex: 1;
 }
 
 .chat-log {
