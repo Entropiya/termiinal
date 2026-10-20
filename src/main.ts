@@ -7,9 +7,12 @@ import { BlockBuilder, type Block, type OscLogEntry } from "./osc-blocks";
 import { buildIntegrationLine } from "./shell-integration";
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
+const SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
 
 const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
 const btnSpawn = document.querySelector<HTMLButtonElement>("#btn-spawn")!;
+const btnSsh = document.querySelector<HTMLButtonElement>("#btn-ssh")!;
+const sshTargetEl = document.querySelector<HTMLInputElement>("#ssh-target")!;
 const btnIntegrate = document.querySelector<HTMLButtonElement>("#btn-integrate")!;
 const btnHistory = document.querySelector<HTMLButtonElement>("#btn-history")!;
 const btnProgress = document.querySelector<HTMLButtonElement>("#btn-progress")!;
@@ -90,8 +93,8 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-async function spawn() {
-  statusEl.textContent = "запускается…";
+async function spawnShell(label: string, program: string, args: string[], env?: Record<string, string>) {
+  statusEl.textContent = `${label}: запускается…`;
   const cols = term.cols;
   const rows = term.rows;
 
@@ -100,13 +103,9 @@ async function spawn() {
   blockBuilder.onOscEvent = renderOsc;
 
   pty = await spawnPty({
-    program: GIT_BASH,
-    args: ["--login", "-i"],
-    // MSYS-рантайм git-bash по умолчанию не знает про ConPTY и ведёт себя так, будто
-    // его вывод никуда не подключён как терминал — отсюда битые Tab/история/стрелки.
-    // enable_pcon — задокументированный флаг MSYS2 именно для работы под ConPTY
-    // (тот же трюк использует Windows Terminal для профиля Git Bash).
-    env: { MSYS: "enable_pcon", MSYS2_PTY: "1" },
+    program,
+    args,
+    env,
     cols,
     rows,
     onData: (bytes) => {
@@ -114,10 +113,12 @@ async function spawn() {
       blockBuilder?.feed(bytes);
     },
     onExit: (code) => {
-      statusEl.textContent = `процесс завершён (код ${code ?? "?"})`;
+      statusEl.textContent = `${label}: процесс завершён (код ${code ?? "?"})`;
       btnIntegrate.disabled = true;
       btnHistory.disabled = true;
       btnProgress.disabled = true;
+      btnSpawn.disabled = false;
+      btnSsh.disabled = false;
     },
   });
 
@@ -125,16 +126,34 @@ async function spawn() {
     pty?.write(data);
   });
 
-  statusEl.textContent = "сессия активна — Git Bash";
+  statusEl.textContent = `сессия активна — ${label}`;
   btnIntegrate.disabled = false;
   btnHistory.disabled = false;
   btnProgress.disabled = false;
   btnSpawn.disabled = true;
+  btnSsh.disabled = true;
   term.focus();
 }
 
 btnSpawn.addEventListener("click", () => {
-  spawn().catch((err) => {
+  spawnShell("Git Bash", GIT_BASH, ["--login", "-i"], {
+    // MSYS-рантайм git-bash по умолчанию не знает про ConPTY и ведёт себя так, будто
+    // его вывод никуда не подключён как терминал — отсюда битые Tab/история/стрелки.
+    // enable_pcon — задокументированный флаг MSYS2 именно для работы под ConPTY
+    // (тот же трюк использует Windows Terminal для профиля Git Bash).
+    MSYS: "enable_pcon",
+    MSYS2_PTY: "1",
+  }).catch((err) => {
+    statusEl.textContent = `ошибка запуска: ${err}`;
+  });
+});
+
+btnSsh.addEventListener("click", () => {
+  const target = sshTargetEl.value.trim();
+  if (!target) return;
+  // Без -o StrictHostKeyChecking — подтверждение отпечатка хоста при первом подключении
+  // идёт через обычный диалог ssh прямо в терминале, как и описано в ТЗ.
+  spawnShell("SSH " + target, "ssh.exe", ["-i", SSH_KEY, target]).catch((err) => {
     statusEl.textContent = `ошибка запуска: ${err}`;
   });
 });
