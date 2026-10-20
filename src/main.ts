@@ -6,6 +6,7 @@ import { spawnPty, type PtyHandle } from "./pty";
 import { BlockBuilder, type Block, type OscLogEntry } from "./osc-blocks";
 import { buildIntegrationLine } from "./shell-integration";
 import { startAgent, type AgentHandle } from "./agent";
+import { redactSecrets } from "./redact";
 import systemPrompt from "./system-prompt.md?raw";
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
@@ -297,9 +298,12 @@ chatFormEl.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = chatInputEl.value.trim();
   if (!text || !agent) return;
-  addChatMessage("user", text);
+  addChatMessage("user", text); // пользователь видит свой текст как есть, без затирания
   chatInputEl.value = "";
-  agent.sendText(text).catch((err) => {
+  // Агенту уходит уже отредактированная копия — см. ТЗ, разд. "Безопасность и приватность":
+  // затирается всё, что уходит агенту, включая сообщения в чат (пользователь мог вставить
+  // в чат кусок конфига или вывода с секретом, не только печатать команды в терминал).
+  agent.sendText(redactSecrets(text)).catch((err) => {
     addChatMessage("system", `⚠ ошибка отправки: ${err}`);
   });
 });
