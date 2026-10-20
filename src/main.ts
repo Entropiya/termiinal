@@ -7,6 +7,8 @@ import { BlockBuilder, type Block, type OscLogEntry } from "./osc-blocks";
 import { buildIntegrationLine } from "./shell-integration";
 import { startAgent, type AgentHandle } from "./agent";
 import { redactSecrets } from "./redact";
+import { shouldSendBlock, formatBlocksForAgent, DEFAULT_BLACKLIST, type AgentPolicy } from "./block-agent";
+import { parseAgentResponse } from "./agent-contract";
 import systemPrompt from "./system-prompt.md?raw";
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
@@ -26,6 +28,8 @@ const checklistEl = document.querySelector<HTMLUListElement>("#checklist")!;
 
 const btnAgentStart = document.querySelector<HTMLButtonElement>("#btn-agent-start")!;
 const btnAgentStop = document.querySelector<HTMLButtonElement>("#btn-agent-stop")!;
+const agentPolicyEl = document.querySelector<HTMLSelectElement>("#agent-policy")!;
+const btnGlance = document.querySelector<HTMLButtonElement>("#btn-glance")!;
 const agentStatusEl = document.querySelector<HTMLSpanElement>("#agent-status")!;
 const chatLogEl = document.querySelector<HTMLDivElement>("#chat-log")!;
 const chatFormEl = document.querySelector<HTMLFormElement>("#chat-form")!;
@@ -84,6 +88,29 @@ term.attachCustomKeyEventHandler((event) => {
 let pty: (PtyHandle & { dispose(): void }) | null = null;
 let blockBuilder: BlockBuilder | null = null;
 
+// ===== Политика "блок -> агент" (ТЗ, разд. "Когда вызывается агент") =====
+let agentPolicy: AgentPolicy = "auto";
+const blacklist = new Set(DEFAULT_BLACKLIST);
+let agentBusy = false;
+let pendingBlockQueue: Block[] = [];
+let pendingKind: "chat" | "blocks" | null = null;
+let pendingBlocksCount = 0;
+let lastClosedBlock: Block | null = null;
+
+agentPolicyEl.addEventListener("change", () => {
+  agentPolicy = agentPolicyEl.value as AgentPolicy;
+});
+
+// Хоткей "глянь" (ТЗ: один на всё) — пока только случай "на закрытом блоке": форсирует
+// отправку последнего блока в обход политики/чёрного списка. Случай "на незавершённом
+// блоке -> снимок текущего экрана" — отдельная фича, требует доступа к живому буферу
+// xterm.js посреди выполнения команды, сделаем отдельным шагом.
+btnGlance.addEventListener("click", () => {
+  if (!lastClosedBlock) return;
+  pendingBlockQueue.push(lastClosedBlock);
+  trySendPending();
+});
+
 function renderBlock(b: Block) {
   const div = document.createElement("div");
   div.className = "block";
@@ -111,7 +138,14 @@ async function spawnShell(label: string, program: string, args: string[], env?: 
   const rows = term.rows;
 
   blockBuilder = new BlockBuilder(cols, rows);
-  blockBuilder.onBlockClosed = renderBlock;
+  blockBuilder.onBlockClosed = (b) => {
+    renderBlock(b);
+    lastClosedBlock = b;
+    if (shouldSendBlock(agentPolicy, blacklist, b)) {
+      pendingBlockQueue.push(b);
+      trySendPending();
+    }
+  };
   blockBuilder.onOscEvent = renderOsc;
 
   pty = await spawnPty({
@@ -223,8 +257,34 @@ function addChatMessage(role: "user" | "agent" | "system", text: string): HTMLDi
 function setAgentActive(active: boolean) {
   btnAgentStart.disabled = active;
   btnAgentStop.disabled = !active;
-  chatInputEl.disabled = !active;
-  chatSendEl.disabled = !active;
+  btnGlance.disabled = !active;
+  updateChatInputEnabled();
+}
+
+function updateChatInputEnabled() {
+  const enabled = agent !== null && !agentBusy;
+  chatInputEl.disabled = !enabled;
+  chatSendEl.disabled = !enabled;
+}
+
+/** Пачки (ТЗ: "если агент ещё думает над предыдущим блоком, новые блоки копятся в
+ * очереди и уходят одним сообщением") — вызывается и при закрытии блока, и после
+ * завершения текущего хода диалога, чтобы разгрузить очередь. */
+function trySendPending() {
+  if (agentBusy || !agent || pendingBlockQueue.length === 0) return;
+  const batch = pendingBlockQueue;
+  pendingBlockQueue = [];
+  agentBusy = true;
+  pendingKind = "blocks";
+  pendingBlocksCount = batch.length;
+  updateChatInputEnabled();
+  const text = redactSecrets(formatBlocksForAgent(batch));
+  agent.sendText(text).catch((err) => {
+    addChatMessage("system", `⚠ ошибка отправки блока(ов): ${err}`);
+    agentBusy = false;
+    pendingKind = null;
+    updateChatInputEnabled();
+  });
 }
 
 btnAgentStart.addEventListener("click", async () => {
@@ -260,14 +320,26 @@ btnAgentStart.addEventListener("click", async () => {
         onTurnComplete: (text, costUsd, isError) => {
           sessionCostUsd += costUsd;
           if (streamingDiv) {
-            streamingDiv.classList.remove("streaming");
-            streamingDiv.textContent = text;
+            streamingDiv.remove(); // дальше решаем сами, что показать — см. ниже
             streamingDiv = null;
+          }
+          const parsed = parseAgentResponse(text);
+          const wasBlocks = pendingKind === "blocks";
+          if (parsed.isSkip) {
+            addChatMessage(
+              "system",
+              wasBlocks ? `агент: нечего сказать по ${pendingBlocksCount} блок(ам) (SKIP)` : "агент: SKIP",
+            );
           } else {
-            addChatMessage("agent", text);
+            addChatMessage("agent", wasBlocks ? `[по ${pendingBlocksCount} блок(ам)] ${text}` : text);
           }
           if (isError) addChatMessage("system", "⚠ ход диалога завершился с ошибкой");
           agentStatusEl.textContent = agentStatusEl.textContent.replace(/\$[\d.]+$/, `$${sessionCostUsd.toFixed(4)}`);
+
+          agentBusy = false;
+          pendingKind = null;
+          updateChatInputEnabled();
+          trySendPending(); // разгружаем очередь блоков, накопившуюся пока агент отвечал
         },
         onRateLimit: (e) => {
           if (e.rate_limit_info.status !== "allowed") {
@@ -279,8 +351,11 @@ btnAgentStart.addEventListener("click", async () => {
         },
         onExit: (code) => {
           agentStatusEl.textContent = `процесс завершён (код ${code ?? "?"})`;
-          setAgentActive(false);
           agent = null;
+          agentBusy = false;
+          pendingKind = null;
+          pendingBlockQueue = [];
+          setAgentActive(false);
         },
       },
     });
@@ -297,14 +372,20 @@ btnAgentStop.addEventListener("click", () => {
 chatFormEl.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = chatInputEl.value.trim();
-  if (!text || !agent) return;
+  if (!text || !agent || agentBusy) return;
   addChatMessage("user", text); // пользователь видит свой текст как есть, без затирания
   chatInputEl.value = "";
+  agentBusy = true;
+  pendingKind = "chat";
+  updateChatInputEnabled();
   // Агенту уходит уже отредактированная копия — см. ТЗ, разд. "Безопасность и приватность":
   // затирается всё, что уходит агенту, включая сообщения в чат (пользователь мог вставить
   // в чат кусок конфига или вывода с секретом, не только печатать команды в терминал).
   agent.sendText(redactSecrets(text)).catch((err) => {
     addChatMessage("system", `⚠ ошибка отправки: ${err}`);
+    agentBusy = false;
+    pendingKind = null;
+    updateChatInputEnabled();
   });
 });
 

@@ -25,6 +25,15 @@
         <strong>Агент</strong>
         <button id="btn-agent-start">Запустить агента</button>
         <button id="btn-agent-stop" disabled>Остановить агента</button>
+        <label>
+          Политика:
+          <select id="agent-policy">
+            <option value="auto" selected>Авто</option>
+            <option value="errors-only">Только ошибки</option>
+            <option value="manual">Вручную</option>
+          </select>
+        </label>
+        <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">Глянь</button>
         <span id="agent-status" class="status">не запущен</span>
       </header>
 
