@@ -16,6 +16,7 @@ const sshTargetEl = document.querySelector<HTMLInputElement>("#ssh-target")!;
 const btnIntegrate = document.querySelector<HTMLButtonElement>("#btn-integrate")!;
 const btnHistory = document.querySelector<HTMLButtonElement>("#btn-history")!;
 const btnProgress = document.querySelector<HTMLButtonElement>("#btn-progress")!;
+const btnKill = document.querySelector<HTMLButtonElement>("#btn-kill")!;
 const blocksEl = document.querySelector<HTMLDivElement>("#blocks")!;
 const oscLogEl = document.querySelector<HTMLDivElement>("#osc-log")!;
 const checklistEl = document.querySelector<HTMLUListElement>("#checklist")!;
@@ -117,8 +118,10 @@ async function spawnShell(label: string, program: string, args: string[], env?: 
       btnIntegrate.disabled = true;
       btnHistory.disabled = true;
       btnProgress.disabled = true;
+      btnKill.disabled = true;
       btnSpawn.disabled = false;
       btnSsh.disabled = false;
+      pty = null;
     },
   });
 
@@ -130,10 +133,19 @@ async function spawnShell(label: string, program: string, args: string[], env?: 
   btnIntegrate.disabled = false;
   btnHistory.disabled = false;
   btnProgress.disabled = false;
+  btnKill.disabled = false;
   btnSpawn.disabled = true;
   btnSsh.disabled = true;
   term.focus();
 }
+
+btnKill.addEventListener("click", () => {
+  pty?.kill().catch((err) => {
+    statusEl.textContent = `ошибка завершения: ${err}`;
+  });
+  // UI полностью сбросится по событию pty-exit (onExit выше), killer только просит
+  // процесс завершиться — ждём подтверждения от wait-потока в Rust.
+});
 
 btnSpawn.addEventListener("click", () => {
   spawnShell("Git Bash", GIT_BASH, ["--login", "-i"], {
