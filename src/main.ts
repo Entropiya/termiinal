@@ -103,6 +103,12 @@ term.attachCustomKeyEventHandler((event) => {
       return false; // подавляем отправку ^C в шелл, раз это было копирование
     }
   }
+  // Ctrl+Shift+Space — переключатель адресата ввода (ТЗ: дополнительный способ, и
+  // единственный рабочий в шеллах без интеграции/OSC-детекции пустого промпта).
+  if (event.type === "keydown" && event.ctrlKey && event.shiftKey && event.code === "Space") {
+    toggleAddressTarget();
+    return false;
+  }
   return true;
 });
 
@@ -120,6 +126,63 @@ let lastClosedBlock: Block | null = null;
 let currentSessionLabel: string | null = null;
 let sessionOsInfo: { osId: string | null; osVersionId: string | null } | null = null;
 let probeCapture: ProbeCapture | null = null;
+
+// ===== Кому адресован ввод (ТЗ, разд. "Режимы интерфейса") =====
+//
+// Основной способ — набрать "! " (восклицательный знак и пробел) первым делом на пустом
+// промпте: уходит в чат, а не в шелл. "!!"/"!ls" без пробела — обычная history expansion
+// bash, должны дойти до шелла как есть. Поскольку оба случая начинаются с одного и того
+// же символа "!", различить их можно только по ВТОРОМУ символу — отсюда "придержка" на
+// один символ ниже: сама "!" никуда не уходит, пока не увидим, пробел за ней или нет.
+let primingBang = false;
+
+function switchFocusToChat() {
+  if (!chatInputEl.disabled) chatInputEl.focus();
+}
+
+/** Ctrl+Shift+Space — дополнительный способ (и единственный, когда интеграции нет:
+ * тогда atPromptStart никогда не станет true, а "! " сам по себе ничего не перехватит). */
+function toggleAddressTarget() {
+  if (document.activeElement === chatInputEl) term.focus();
+  else switchFocusToChat();
+}
+
+function setAddressIndicator(target: "term" | "chat") {
+  document.querySelector(".pane-term")?.classList.toggle("addressing", target === "term");
+  document.querySelector(".pane-chat")?.classList.toggle("addressing", target === "chat");
+}
+
+document.addEventListener("focusin", (e) => {
+  const t = e.target as HTMLElement;
+  if (t === chatInputEl) setAddressIndicator("chat");
+  else if (document.getElementById("xterm")?.contains(t)) setAddressIndicator("term");
+});
+
+/** true, если данные обработаны здесь и в pty уходить не должны. */
+function handleAgentPrefixInput(data: string): boolean {
+  if (primingBang) {
+    primingBang = false;
+    if (data === " ") {
+      switchFocusToChat();
+      return true; // ни "!", ни пробел в шелл не уходят вообще
+    }
+    // не пробел — это была history expansion ("!!", "!42", "!ls"...), досылаем
+    // придержанный "!" и этот символ одним куском, раз уж не отправили раньше.
+    pty?.write("!" + data);
+    return true;
+  }
+  if (blockBuilder?.atPromptStart && data === "!") {
+    primingBang = true;
+    return true; // придержали; ничего не рисуем сами — и реальный шелл, и мы молчим,
+    // пока не увидим следующий символ (иначе рисковали бы задвоить эхо с тем, что
+    // потом всё равно пришлёт сам шелл при досылке).
+  }
+  return false;
+}
+
+term.onData((data) => {
+  if (!handleAgentPrefixInput(data)) pty?.write(data);
+});
 
 function handleProbeResult(r: ProbeResult | null) {
   probeCapture = null;
@@ -234,10 +297,6 @@ async function spawnShell(
       sessionOsInfo = null;
       probeCapture = null;
     },
-  });
-
-  term.onData((data) => {
-    pty?.write(data);
   });
 
   statusEl.textContent = `сессия активна — ${label}`;
@@ -565,5 +624,10 @@ chatInputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     chatFormEl.requestSubmit();
+    return;
+  }
+  if (e.ctrlKey && e.shiftKey && e.code === "Space") {
+    e.preventDefault();
+    toggleAddressTarget();
   }
 });

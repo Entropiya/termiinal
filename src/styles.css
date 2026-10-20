@@ -192,6 +192,13 @@ textarea:focus {
 .pane {
   padding: 0.7rem 0.9rem;
   overflow: auto;
+  border: 1px solid transparent; /* место держим всегда, чтобы .addressing не "прыгал" */
+}
+
+/* "Кому адресован ввод" (ТЗ): пока правит, какая панель сейчас получает нажатия клавиш —
+   терминал или чат — рамка подсвечивается, чтобы не перепутать адресата. */
+.pane.addressing {
+  border-color: var(--accent);
 }
 
 .pane h2 {

@@ -30,6 +30,13 @@ export class BlockBuilder {
   private execStartRow: number | null = null;
   private blockSeq = 0;
 
+  /** ТЗ: «пустой промпт» для перехвата `! ` — "после B, до первого нажатия". Грубое
+   * приближение: true с момента показа промпта (B) до начала выполнения (C). Не отличает
+   * "ничего не напечатано" от "напечатали и стёрли обратно в ноль" — для MVP этого
+   * перехвата достаточно, точный учёт пустоты строки требует знать курсор И текст строки
+   * одновременно, это уже сама строка ввода, а не то, что видно в выводе шелла. */
+  atPromptStart = false;
+
   onBlockClosed: ((b: Block) => void) | null = null;
   onOscEvent: ((e: OscLogEntry) => void) | null = null;
 
@@ -39,8 +46,11 @@ export class BlockBuilder {
     this.headless.parser.registerOscHandler(133, (data) => {
       this.log("133", data);
       const [code, rest] = splitFirst(data);
-      if (code === "C") {
+      if (code === "B") {
+        this.atPromptStart = true;
+      } else if (code === "C") {
         // Начало выполнения — именно отсюда и до маркера D идёт "чистый" вывод команды.
+        this.atPromptStart = false;
         this.execStartRow = this.absCursorRow();
       } else if (code === "D") {
         const exitCode = rest !== undefined && rest !== "" ? Number(rest) : null;
