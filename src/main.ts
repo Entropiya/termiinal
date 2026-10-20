@@ -96,6 +96,15 @@ let pendingBlockQueue: Block[] = [];
 let pendingKind: "chat" | "blocks" | null = null;
 let pendingBlocksCount = 0;
 let lastClosedBlock: Block | null = null;
+let currentSessionLabel: string | null = null;
+
+/** Короткая строка контекста, которую агент видит в КАЖДОМ сообщении (и блоке, и чате).
+ * Без неё агент не знает, что перед ним — локальный Windows (Git Bash) или удалённый
+ * Linux/Unix по ssh, и начинает советовать `ipconfig`/PowerShell там, где нужен `ip a`. */
+function contextLine(): string {
+  if (!currentSessionLabel) return "[Контекст] активной сессии в терминале нет.";
+  return `[Контекст] активная сессия: ${currentSessionLabel}.`;
+}
 
 agentPolicyEl.addEventListener("change", () => {
   agentPolicy = agentPolicyEl.value as AgentPolicy;
@@ -134,6 +143,7 @@ function escapeHtml(s: string): string {
 
 async function spawnShell(label: string, program: string, args: string[], env?: Record<string, string>) {
   statusEl.textContent = `${label}: запускается…`;
+  currentSessionLabel = label;
   const cols = term.cols;
   const rows = term.rows;
 
@@ -167,6 +177,7 @@ async function spawnShell(label: string, program: string, args: string[], env?: 
       btnSpawn.disabled = false;
       btnSsh.disabled = false;
       pty = null;
+      currentSessionLabel = null;
     },
   });
 
@@ -278,7 +289,7 @@ function trySendPending() {
   pendingKind = "blocks";
   pendingBlocksCount = batch.length;
   updateChatInputEnabled();
-  const text = redactSecrets(formatBlocksForAgent(batch));
+  const text = redactSecrets(`${contextLine()}\n\n${formatBlocksForAgent(batch)}`);
   agent.sendText(text).catch((err) => {
     addChatMessage("system", `⚠ ошибка отправки блока(ов): ${err}`);
     agentBusy = false;
@@ -381,7 +392,7 @@ chatFormEl.addEventListener("submit", (e) => {
   // Агенту уходит уже отредактированная копия — см. ТЗ, разд. "Безопасность и приватность":
   // затирается всё, что уходит агенту, включая сообщения в чат (пользователь мог вставить
   // в чат кусок конфига или вывода с секретом, не только печатать команды в терминал).
-  agent.sendText(redactSecrets(text)).catch((err) => {
+  agent.sendText(redactSecrets(`${contextLine()}\n\n${text}`)).catch((err) => {
     addChatMessage("system", `⚠ ошибка отправки: ${err}`);
     agentBusy = false;
     pendingKind = null;
