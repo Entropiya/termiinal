@@ -155,6 +155,21 @@ let lastClosedBlock: Block | null = null;
 let currentSessionLabel: string | null = null;
 let sessionOsInfo: { osId: string | null; osVersionId: string | null } | null = null;
 let probeCapture: ProbeCapture | null = null;
+// После самого маркера конца пробы шелл всё равно дорисует СЛЕДУЮЩИЙ, уже настоящий
+// промпт — это неизбежно после любой команды, его отдельно не спрятать на уровне самой
+// команды. Прячем и его тоже: держим подавление, пока не наступит короткая пауза тишины
+// в байтах (разумное допущение, что это и есть хвостовая перерисовка, а не что-то
+// содержательное — в момент пробы пользователь ещё ничего не печатает).
+let probeTrailingSuppress = false;
+let probeTrailingTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleProbeTrailingEnd() {
+  if (probeTrailingTimer) clearTimeout(probeTrailingTimer);
+  probeTrailingTimer = setTimeout(() => {
+    probeTrailingSuppress = false;
+    probeTrailingTimer = null;
+  }, 250);
+}
 
 // ===== Кому адресован ввод (ТЗ, разд. "Режимы интерфейса") =====
 //
@@ -319,6 +334,11 @@ async function spawnShell(
   currentSessionLabel = label;
   sessionOsInfo = null;
   probeCapture = null;
+  probeTrailingSuppress = false;
+  if (probeTrailingTimer) {
+    clearTimeout(probeTrailingTimer);
+    probeTrailingTimer = null;
+  }
   const cols = term.cols;
   const rows = term.rows;
 
@@ -338,12 +358,22 @@ async function spawnShell(
     cols,
     rows,
     onData: (bytes) => {
-      // Пока идёт скрытая проба хоста — ни видимый терминал, ни headless-копия её не
-      // видят. Обязательно решаем одинаково для обоих: иначе их буферы разойдутся по
-      // номерам строк, на которых держится нарезка на блоки (см. BlockBuilder).
-      if (probeCapture && !probeCapture.done) {
+      // Пока идёт скрытая проба хоста (и короткое время после неё, пока шелл дорисовывает
+      // следующий промпт) — ни видимый терминал, ни headless-копия её не видят. Обязательно
+      // решаем одинаково для обоих: иначе их буферы разойдутся по номерам строк, на
+      // которых держится нарезка на блоки (см. BlockBuilder).
+      if (probeCapture) {
         probeCapture.feed(bytes);
-        if (probeCapture.done) handleProbeResult(probeCapture.result());
+        if (probeCapture.done) {
+          handleProbeResult(probeCapture.result());
+          probeCapture = null;
+          probeTrailingSuppress = true;
+        }
+        scheduleProbeTrailingEnd();
+        return;
+      }
+      if (probeTrailingSuppress) {
+        scheduleProbeTrailingEnd();
         return;
       }
       term.write(bytes);
@@ -359,6 +389,11 @@ async function spawnShell(
       currentSessionLabel = null;
       sessionOsInfo = null;
       probeCapture = null;
+      probeTrailingSuppress = false;
+      if (probeTrailingTimer) {
+        clearTimeout(probeTrailingTimer);
+        probeTrailingTimer = null;
+      }
     },
   });
 
