@@ -9,6 +9,7 @@ import { startAgent, type AgentHandle } from "./agent";
 import { redactSecrets } from "./redact";
 import { shouldSendBlock, formatBlocksForAgent, DEFAULT_BLACKLIST, type AgentPolicy } from "./block-agent";
 import { parseAgentResponse } from "./agent-contract";
+import { renderAgentMarkdown } from "./render-markdown";
 import systemPrompt from "./system-prompt.md?raw";
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
@@ -259,10 +260,18 @@ let streamingText = "";
 function addChatMessage(role: "user" | "agent" | "system", text: string): HTMLDivElement {
   const div = document.createElement("div");
   div.className = `chat-msg ${role}`;
-  div.textContent = text;
+  // Markdown рендерим только ответам агента — это единственное, что идёт по контракту
+  // ответа (ТЗ). Текст самого пользователя и наши системные пометки — просто текст,
+  // без интерпретации разметки (и без риска парсинга экранов/бэктиков как markdown).
+  if (role === "agent") setAgentMessageHtml(div, text);
+  else div.textContent = text;
   chatLogEl.appendChild(div);
   chatLogEl.scrollTop = chatLogEl.scrollHeight;
   return div;
+}
+
+function setAgentMessageHtml(div: HTMLDivElement, text: string) {
+  div.innerHTML = renderAgentMarkdown(text);
 }
 
 function setAgentActive(active: boolean) {

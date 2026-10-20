@@ -96,6 +96,13 @@ body {
   border-radius: 6px;
   padding: 0.4rem 0.6rem;
   font-size: 0.85rem;
+}
+
+/* user/system ставятся через textContent — переносы строк не интерпретируются браузером
+   сами по себе, их нужно сохранить явно. agent рендерится как HTML (markdown-it), ему
+   это не нужно и даже мешает (задвоило бы пробелы между блочными тегами). */
+.chat-msg.user,
+.chat-msg.system {
   white-space: pre-wrap;
 }
 
@@ -109,10 +116,54 @@ body {
   background: #2d2d2d;
   align-self: flex-start;
   max-width: 85%;
+  line-height: 1.45;
+}
+
+.chat-msg.agent > :first-child {
+  margin-top: 0;
+}
+.chat-msg.agent > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-msg.agent pre {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 0.5rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+
+.chat-msg.agent code {
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.chat-msg.agent :not(pre) > code {
+  background: #111;
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+}
+
+.chat-msg.agent ul,
+.chat-msg.agent ol {
+  padding-left: 1.2rem;
+  margin: 0.3rem 0;
+}
+
+.chat-msg.agent p {
+  margin: 0.4rem 0;
+}
+
+.chat-msg.agent a {
+  color: #4fc1ff;
 }
 
 .chat-msg.agent.streaming {
   opacity: 0.7;
+  /* Во время печати это ещё textContent, не отрендеренный markdown — переносы нужно
+     сохранять явно, как для user/system. Заменяется на HTML при завершении хода. */
+  white-space: pre-wrap;
 }
 
 .chat-msg.system {
