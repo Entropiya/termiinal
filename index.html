@@ -10,36 +10,47 @@
 
   <body>
     <main class="shell">
+      <header class="toolbar toolbar-connect">
+        <button id="btn-spawn" class="btn-primary">Git Bash</button>
+        <span class="sep"></span>
+        <select id="preset-select" title="Сохранённые подключения">
+          <option value="">— новое подключение —</option>
+        </select>
+        <input id="preset-name" placeholder="имя пресета" size="9" />
+        <input id="preset-user" placeholder="пользователь" size="8" value="Pakochka" />
+        <span class="at">@</span>
+        <input id="preset-host" placeholder="хост" size="13" value="192.168.70.167" />
+        <input id="preset-port" placeholder="порт" size="4" />
+        <input id="preset-key" placeholder="путь к ключу" size="16" value="C:\Users\Pakochka\.ssh\id_ed25519" />
+        <button id="btn-ssh" class="btn-primary">Подключиться</button>
+        <button id="btn-preset-save" title="Сохранить текущие поля как пресет">Сохранить</button>
+        <button id="btn-preset-delete" disabled title="Удалить выбранный пресет">✕</button>
+      </header>
       <header class="toolbar">
-        <strong>Этап 2 — MVP</strong>
-        <button id="btn-spawn">Запустить Git Bash</button>
-        <input id="ssh-target" value="root@192.168.70.167" size="20" title="user@host" />
-        <button id="btn-ssh">Подключиться по SSH</button>
         <button id="btn-integrate" disabled>Внедрить интеграцию</button>
         <button id="btn-history" disabled>Проверить историю</button>
         <button id="btn-progress" disabled>Тест \r-перерисовки</button>
-        <button id="btn-kill" disabled>Завершить сессию</button>
+        <button id="btn-kill" disabled class="btn-danger">Завершить сессию</button>
         <span id="status" class="status">не запущено</span>
       </header>
       <header class="toolbar">
-        <strong>Агент</strong>
-        <button id="btn-agent-start">Запустить агента</button>
-        <button id="btn-agent-stop" disabled>Остановить агента</button>
-        <label>
-          Политика:
+        <button id="btn-agent-start" class="btn-primary">Запустить агента</button>
+        <button id="btn-agent-stop" disabled class="btn-danger">Остановить агента</button>
+        <label class="policy-label">
+          Политика
           <select id="agent-policy">
             <option value="auto" selected>Авто</option>
             <option value="errors-only">Только ошибки</option>
             <option value="manual">Вручную</option>
           </select>
         </label>
-        <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">Глянь</button>
+        <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">👁 Глянь</button>
         <span id="agent-status" class="status">не запущен</span>
       </header>
 
       <div class="panes">
         <section class="pane pane-term">
-          <h2>Терминал (xterm.js)</h2>
+          <h2>Терминал</h2>
           <div id="xterm"></div>
         </section>
 
@@ -48,7 +59,7 @@
           <div id="chat-log" class="chat-log"></div>
           <form id="chat-form" class="chat-form">
             <textarea id="chat-input" rows="2" placeholder="Сообщение агенту…" disabled></textarea>
-            <button id="chat-send" type="submit" disabled>Отправить</button>
+            <button id="chat-send" type="submit" class="btn-primary" disabled>➤</button>
           </form>
         </section>
 

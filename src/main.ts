@@ -10,15 +10,23 @@ import { redactSecrets } from "./redact";
 import { shouldSendBlock, formatBlocksForAgent, DEFAULT_BLACKLIST, type AgentPolicy } from "./block-agent";
 import { parseAgentResponse } from "./agent-contract";
 import { renderAgentMarkdown } from "./render-markdown";
+import { loadPresets, upsertPreset, removePreset, type ConnectionPreset } from "./presets";
 import systemPrompt from "./system-prompt.md?raw";
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
-const SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
+const DEFAULT_SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
 
 const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
 const btnSpawn = document.querySelector<HTMLButtonElement>("#btn-spawn")!;
 const btnSsh = document.querySelector<HTMLButtonElement>("#btn-ssh")!;
-const sshTargetEl = document.querySelector<HTMLInputElement>("#ssh-target")!;
+const presetSelectEl = document.querySelector<HTMLSelectElement>("#preset-select")!;
+const presetNameEl = document.querySelector<HTMLInputElement>("#preset-name")!;
+const presetUserEl = document.querySelector<HTMLInputElement>("#preset-user")!;
+const presetHostEl = document.querySelector<HTMLInputElement>("#preset-host")!;
+const presetPortEl = document.querySelector<HTMLInputElement>("#preset-port")!;
+const presetKeyEl = document.querySelector<HTMLInputElement>("#preset-key")!;
+const btnPresetSave = document.querySelector<HTMLButtonElement>("#btn-preset-save")!;
+const btnPresetDelete = document.querySelector<HTMLButtonElement>("#btn-preset-delete")!;
 const btnIntegrate = document.querySelector<HTMLButtonElement>("#btn-integrate")!;
 const btnHistory = document.querySelector<HTMLButtonElement>("#btn-history")!;
 const btnProgress = document.querySelector<HTMLButtonElement>("#btn-progress")!;
@@ -62,6 +70,12 @@ const term = new Terminal({
   fontSize: 14,
   cursorBlink: true,
   allowProposedApi: true,
+  theme: {
+    background: "#16161a",
+    foreground: "#e3e3e6",
+    cursor: "#5aa8ff",
+    selectionBackground: "#5aa8ff55",
+  },
 });
 const fitAddon = new FitAddon();
 term.loadAddon(fitAddon);
@@ -217,12 +231,82 @@ btnSpawn.addEventListener("click", () => {
   });
 });
 
+// ===== Пресеты подключений (ТЗ: "Подключения и пресеты") =====
+
+function refreshPresetSelect(selectId = "") {
+  const presets = loadPresets();
+  presetSelectEl.innerHTML = '<option value="">— новое подключение —</option>';
+  for (const p of presets) {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name;
+    presetSelectEl.appendChild(opt);
+  }
+  presetSelectEl.value = selectId;
+  btnPresetDelete.disabled = !selectId;
+}
+
+function currentFieldsAsPreset(id: string): ConnectionPreset {
+  return {
+    id,
+    name: presetNameEl.value.trim() || `${presetUserEl.value}@${presetHostEl.value}`,
+    user: presetUserEl.value.trim(),
+    host: presetHostEl.value.trim(),
+    port: presetPortEl.value.trim() ? Number(presetPortEl.value.trim()) : undefined,
+    keyPath: presetKeyEl.value.trim() || undefined,
+  };
+}
+
+presetSelectEl.addEventListener("change", () => {
+  const id = presetSelectEl.value;
+  btnPresetDelete.disabled = !id;
+  if (!id) return;
+  const p = loadPresets().find((x) => x.id === id);
+  if (!p) return;
+  presetNameEl.value = p.name;
+  presetUserEl.value = p.user;
+  presetHostEl.value = p.host;
+  presetPortEl.value = p.port ? String(p.port) : "";
+  presetKeyEl.value = p.keyPath ?? DEFAULT_SSH_KEY;
+});
+
+btnPresetSave.addEventListener("click", () => {
+  const id = presetSelectEl.value || crypto.randomUUID();
+  const preset = currentFieldsAsPreset(id);
+  if (!preset.user || !preset.host) {
+    statusEl.textContent = "для пресета нужны хотя бы пользователь и хост";
+    return;
+  }
+  upsertPreset(preset);
+  refreshPresetSelect(id);
+});
+
+btnPresetDelete.addEventListener("click", () => {
+  const id = presetSelectEl.value;
+  if (!id) return;
+  removePreset(id);
+  refreshPresetSelect("");
+  presetNameEl.value = "";
+});
+
+refreshPresetSelect();
+
 btnSsh.addEventListener("click", () => {
-  const target = sshTargetEl.value.trim();
-  if (!target) return;
+  const user = presetUserEl.value.trim();
+  const host = presetHostEl.value.trim();
+  if (!user || !host) {
+    statusEl.textContent = "укажи пользователя и хост";
+    return;
+  }
+  const port = presetPortEl.value.trim();
+  const keyPath = presetKeyEl.value.trim() || DEFAULT_SSH_KEY;
+  const target = `${user}@${host}`;
+  const args = ["-i", keyPath];
+  if (port) args.push("-p", port);
+  args.push(target);
   // Без -o StrictHostKeyChecking — подтверждение отпечатка хоста при первом подключении
   // идёт через обычный диалог ssh прямо в терминале, как и описано в ТЗ.
-  spawnShell("SSH " + target, "ssh.exe", ["-i", SSH_KEY, target]).catch((err) => {
+  spawnShell("SSH " + target, "ssh.exe", args).catch((err) => {
     statusEl.textContent = `ошибка запуска: ${err}`;
   });
 });
