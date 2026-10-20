@@ -789,6 +789,11 @@ async function startAgentSession() {
         },
       },
     });
+    // `claude -p --input-format stream-json` не присылает вообще ничего, даже system/init,
+    // пока не получит первое сообщение — проверено эмпирически (см. docs/stage2.md).
+    // Поэтому дальше честно "ждёт", а не "запускается" — процесс уже живой, просто
+    // пока нечего подтвердить (изоляцию покажем, когда придёт init на первое сообщение).
+    agentStatusEl.textContent = "ждёт первого сообщения…";
     setAgentActive(true);
   } catch (err) {
     agentStatusEl.textContent = `ошибка запуска: ${err}`;
