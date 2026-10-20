@@ -162,12 +162,22 @@ let probeCapture: ProbeCapture | null = null;
 // содержательное — в момент пробы пользователь ещё ничего не печатает).
 let probeTrailingSuppress = false;
 let probeTrailingTimer: ReturnType<typeof setTimeout> | null = null;
+// Если проба получила hostname, интеграцию шлём сами (см. handleProbeResult) — но не
+// СРАЗУ: это гонка с подавлением выше. Пока хвостовая перерисовка промпта ещё может быть
+// в пути по сети, её эхо и эхо самой строки интеграции перемешались бы. Поэтому только
+// ставим флаг здесь, а реально печатаем позже, когда подавление само естественно закончится.
+let pendingAutoIntegration = false;
 
 function scheduleProbeTrailingEnd() {
   if (probeTrailingTimer) clearTimeout(probeTrailingTimer);
   probeTrailingTimer = setTimeout(() => {
     probeTrailingSuppress = false;
     probeTrailingTimer = null;
+    if (pendingAutoIntegration) {
+      pendingAutoIntegration = false;
+      pty?.write(buildIntegrationLine() + "\r");
+      addChatMessage("system", "Интеграция внедрена автоматически (hostname опознан).");
+    }
   }, 250);
 }
 
@@ -239,6 +249,13 @@ function handleProbeResult(r: ProbeResult | null) {
     "system",
     `Проба хоста: шелл=${r.shellPath ?? "?"} хост=${r.hostname ?? "?"} ОС=${r.osId ?? "?"} ${r.osVersionId ?? ""}`.trim(),
   );
+  // Пользователь явно согласился на компромисс "как у пробы": если проба вообще
+  // получила осмысленный hostname обратно, значит эхо точно было включено и мы
+  // действительно сидели на обычном рабочем промпте (а не, скажем, в приглашении
+  // пароля) — это и есть наше подтверждение "можно печатать", раз честного разбора
+  // текста промпта (как того просит ТЗ для автовключения) у нас пока нет. Саму отправку
+  // см. в scheduleProbeTrailingEnd — тут только ставим флаг, см. комментарий там.
+  if (r.hostname) pendingAutoIntegration = true;
 }
 
 /** Короткая строка контекста, которую агент видит в КАЖДОМ сообщении (и блоке, и чате).
@@ -335,6 +352,7 @@ async function spawnShell(
   sessionOsInfo = null;
   probeCapture = null;
   probeTrailingSuppress = false;
+  pendingAutoIntegration = false;
   if (probeTrailingTimer) {
     clearTimeout(probeTrailingTimer);
     probeTrailingTimer = null;
@@ -390,6 +408,7 @@ async function spawnShell(
       sessionOsInfo = null;
       probeCapture = null;
       probeTrailingSuppress = false;
+      pendingAutoIntegration = false;
       if (probeTrailingTimer) {
         clearTimeout(probeTrailingTimer);
         probeTrailingTimer = null;
