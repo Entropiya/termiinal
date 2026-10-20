@@ -308,10 +308,21 @@ function currentFieldsAsPreset(id: string): ConnectionPreset {
   };
 }
 
+function clearPresetFields() {
+  presetNameEl.value = "";
+  presetUserEl.value = "";
+  presetHostEl.value = "";
+  presetPortEl.value = "";
+  presetKeyEl.value = DEFAULT_SSH_KEY;
+}
+
 presetSelectEl.addEventListener("change", () => {
   const id = presetSelectEl.value;
   btnPresetDelete.disabled = !id;
-  if (!id) return;
+  if (!id) {
+    clearPresetFields(); // иначе в полях остаются значения ранее выбранного пресета
+    return;
+  }
   const p = loadPresets().find((x) => x.id === id);
   if (!p) return;
   presetNameEl.value = p.name;
@@ -337,7 +348,9 @@ btnPresetDelete.addEventListener("click", () => {
   if (!id) return;
   removePreset(id);
   refreshPresetSelect("");
-  presetNameEl.value = "";
+  // Поля должны реально опустеть, а не остаться с данными только что удалённого
+  // пресета — иначе визуально выглядит так, будто удаление не сработало.
+  clearPresetFields();
 });
 
 refreshPresetSelect();
