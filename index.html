@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>terminal-mentor — этап 1</title>
+    <title>terminal-mentor — этап 2</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
   <body>
     <main class="shell">
       <header class="toolbar">
-        <strong>Этап 1 — прототип рисков</strong>
+        <strong>Этап 2 — MVP</strong>
         <button id="btn-spawn">Запустить Git Bash</button>
         <input id="ssh-target" value="root@192.168.70.167" size="20" title="user@host" />
         <button id="btn-ssh">Подключиться по SSH</button>
@@ -21,11 +21,26 @@
         <button id="btn-kill" disabled>Завершить сессию</button>
         <span id="status" class="status">не запущено</span>
       </header>
+      <header class="toolbar">
+        <strong>Агент</strong>
+        <button id="btn-agent-start">Запустить агента</button>
+        <button id="btn-agent-stop" disabled>Остановить агента</button>
+        <span id="agent-status" class="status">не запущен</span>
+      </header>
 
       <div class="panes">
         <section class="pane pane-term">
           <h2>Терминал (xterm.js)</h2>
           <div id="xterm"></div>
+        </section>
+
+        <section class="pane pane-chat">
+          <h2>Чат с агентом</h2>
+          <div id="chat-log" class="chat-log"></div>
+          <form id="chat-form" class="chat-form">
+            <textarea id="chat-input" rows="2" placeholder="Сообщение агенту…" disabled></textarea>
+            <button id="chat-send" type="submit" disabled>Отправить</button>
+          </form>
         </section>
 
         <section class="pane pane-side">

@@ -5,6 +5,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { spawnPty, type PtyHandle } from "./pty";
 import { BlockBuilder, type Block, type OscLogEntry } from "./osc-blocks";
 import { buildIntegrationLine } from "./shell-integration";
+import { startAgent, type AgentHandle } from "./agent";
+import systemPrompt from "./system-prompt.md?raw";
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
 const SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
@@ -20,6 +22,14 @@ const btnKill = document.querySelector<HTMLButtonElement>("#btn-kill")!;
 const blocksEl = document.querySelector<HTMLDivElement>("#blocks")!;
 const oscLogEl = document.querySelector<HTMLDivElement>("#osc-log")!;
 const checklistEl = document.querySelector<HTMLUListElement>("#checklist")!;
+
+const btnAgentStart = document.querySelector<HTMLButtonElement>("#btn-agent-start")!;
+const btnAgentStop = document.querySelector<HTMLButtonElement>("#btn-agent-stop")!;
+const agentStatusEl = document.querySelector<HTMLSpanElement>("#agent-status")!;
+const chatLogEl = document.querySelector<HTMLDivElement>("#chat-log")!;
+const chatFormEl = document.querySelector<HTMLFormElement>("#chat-form")!;
+const chatInputEl = document.querySelector<HTMLTextAreaElement>("#chat-input")!;
+const chatSendEl = document.querySelector<HTMLButtonElement>("#chat-send")!;
 
 const CHECKLIST: { id: string; text: string }[] = [
   { id: "osc-intact", text: "OSC 133/633/7 доходят целыми через ConPTY (см. блоки и OSC-лог)" },
@@ -191,4 +201,112 @@ window.addEventListener("resize", () => {
   const rows = term.rows;
   pty?.resize(cols, rows);
   blockBuilder?.resize(cols, rows);
+});
+
+// ===== Агент (Claude) =====
+
+let agent: AgentHandle | null = null;
+let sessionCostUsd = 0;
+let streamingDiv: HTMLDivElement | null = null;
+let streamingText = "";
+
+function addChatMessage(role: "user" | "agent" | "system", text: string): HTMLDivElement {
+  const div = document.createElement("div");
+  div.className = `chat-msg ${role}`;
+  div.textContent = text;
+  chatLogEl.appendChild(div);
+  chatLogEl.scrollTop = chatLogEl.scrollHeight;
+  return div;
+}
+
+function setAgentActive(active: boolean) {
+  btnAgentStart.disabled = active;
+  btnAgentStop.disabled = !active;
+  chatInputEl.disabled = !active;
+  chatSendEl.disabled = !active;
+}
+
+btnAgentStart.addEventListener("click", async () => {
+  agentStatusEl.textContent = "запускается…";
+  try {
+    agent = await startAgent({
+      systemPrompt,
+      // Самая дешёвая модель по умолчанию для MVP-стенда — реальный выбор модели
+      // (и кнопка "тяжёлая модель на сложный разбор" из ТЗ) это отдельная фича этапа 3.
+      model: "claude-haiku-5-5",
+      maxBudgetUsd: 0.5,
+      callbacks: {
+        onInit: (e) => {
+          const isolated = e.tools.length === 0 && e.mcp_servers.length === 0;
+          agentStatusEl.textContent = `${e.model} · изоляция: ${isolated ? "подтверждена (0 инструментов)" : `⚠ ${e.tools.length} инстр./${e.mcp_servers.length} MCP`} · $${sessionCostUsd.toFixed(4)}`;
+          addChatMessage(
+            "system",
+            isolated
+              ? "Сессия агента поднята, инструментов и MCP-серверов нет — подтверждено из system/init."
+              : `⚠ Внимание: у агента есть доступные инструменты (${e.tools.join(", ") || "—"}) или MCP-серверы (${e.mcp_servers.length}). Изоляция не подтверждена.`,
+          );
+        },
+        onTextDelta: (delta) => {
+          if (!streamingDiv) {
+            streamingDiv = addChatMessage("agent", "");
+            streamingDiv.classList.add("streaming");
+            streamingText = "";
+          }
+          streamingText += delta;
+          streamingDiv.textContent = streamingText;
+          chatLogEl.scrollTop = chatLogEl.scrollHeight;
+        },
+        onTurnComplete: (text, costUsd, isError) => {
+          sessionCostUsd += costUsd;
+          if (streamingDiv) {
+            streamingDiv.classList.remove("streaming");
+            streamingDiv.textContent = text;
+            streamingDiv = null;
+          } else {
+            addChatMessage("agent", text);
+          }
+          if (isError) addChatMessage("system", "⚠ ход диалога завершился с ошибкой");
+          agentStatusEl.textContent = agentStatusEl.textContent.replace(/\$[\d.]+$/, `$${sessionCostUsd.toFixed(4)}`);
+        },
+        onRateLimit: (e) => {
+          if (e.rate_limit_info.status !== "allowed") {
+            addChatMessage("system", `⚠ лимит/кредит: ${e.rate_limit_info.status} (${e.rate_limit_info.overageDisabledReason ?? ""})`);
+          }
+        },
+        onStderr: (line) => {
+          console.warn("[agent stderr]", line);
+        },
+        onExit: (code) => {
+          agentStatusEl.textContent = `процесс завершён (код ${code ?? "?"})`;
+          setAgentActive(false);
+          agent = null;
+        },
+      },
+    });
+    setAgentActive(true);
+  } catch (err) {
+    agentStatusEl.textContent = `ошибка запуска: ${err}`;
+  }
+});
+
+btnAgentStop.addEventListener("click", () => {
+  agent?.stop();
+});
+
+chatFormEl.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = chatInputEl.value.trim();
+  if (!text || !agent) return;
+  addChatMessage("user", text);
+  chatInputEl.value = "";
+  agent.sendText(text).catch((err) => {
+    addChatMessage("system", `⚠ ошибка отправки: ${err}`);
+  });
+});
+
+chatInputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    chatFormEl.requestSubmit();
+  }
 });
