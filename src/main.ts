@@ -18,6 +18,8 @@ const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
 const DEFAULT_SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
 
 const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
+const btnMode = document.querySelector<HTMLButtonElement>("#btn-mode")!;
+const shellEl = document.querySelector<HTMLElement>(".shell")!;
 const btnSpawn = document.querySelector<HTMLButtonElement>("#btn-spawn")!;
 const btnSsh = document.querySelector<HTMLButtonElement>("#btn-ssh")!;
 const presetSelectEl = document.querySelector<HTMLSelectElement>("#preset-select")!;
@@ -109,7 +111,40 @@ term.attachCustomKeyEventHandler((event) => {
     toggleAddressTarget();
     return false;
   }
+  if (event.type === "keydown" && event.ctrlKey && event.shiftKey && event.code === "KeyM") {
+    cycleUiMode();
+    return false;
+  }
   return true;
+});
+
+// ===== Режимы интерфейса (ТЗ, разд. "Режимы интерфейса") — MVP: только "Чат" и
+// "Терминал", без "Сплита" (это следующий этап); Ctrl+Shift+M переключает по кругу. =====
+type UiMode = "terminal" | "chat";
+let uiMode: UiMode = "terminal";
+const MODE_LABELS: Record<UiMode, string> = { terminal: "Терминал", chat: "Чат" };
+
+function setUiMode(mode: UiMode) {
+  uiMode = mode;
+  shellEl.dataset.mode = mode;
+  btnMode.textContent = `Режим: ${MODE_LABELS[mode]}`;
+}
+
+function cycleUiMode() {
+  setUiMode(uiMode === "terminal" ? "chat" : "terminal");
+}
+
+btnMode.addEventListener("click", cycleUiMode);
+setUiMode(uiMode);
+
+// Ctrl+Shift+M должен работать и когда фокус в чате (textarea), не только в терминале.
+window.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey && e.shiftKey && e.code === "KeyM")) return;
+  // Фокус внутри xterm уже обработан через attachCustomKeyEventHandler выше —
+  // пропускаем здесь, иначе сработает дважды подряд.
+  if (document.getElementById("xterm")?.contains(document.activeElement)) return;
+  e.preventDefault();
+  cycleUiMode();
 });
 
 let pty: (PtyHandle & { dispose(): void }) | null = null;
@@ -122,6 +157,7 @@ let agentBusy = false;
 let pendingBlockQueue: Block[] = [];
 let pendingKind: "chat" | "blocks" | null = null;
 let pendingBlocksCount = 0;
+let pendingBatch: Block[] = [];
 let lastClosedBlock: Block | null = null;
 let currentSessionLabel: string | null = null;
 let sessionOsInfo: { osId: string | null; osVersionId: string | null } | null = null;
@@ -220,6 +256,8 @@ btnGlance.addEventListener("click", () => {
   trySendPending();
 });
 
+const blockElements = new Map<number, HTMLDivElement>();
+
 function renderBlock(b: Block) {
   const div = document.createElement("div");
   div.className = "block";
@@ -229,6 +267,40 @@ function renderBlock(b: Block) {
     <pre>${escapeHtml(b.output)}</pre>
   `;
   blocksEl.prepend(div);
+  blockElements.set(b.id, div);
+}
+
+/** ТЗ, режим «Терминал»: "ответ агента прикреплён под своей командой... в свёрнутом виде
+ * видна одна строка-итог... развёрнутый блок показывает полный разбор". Пачка блоков —
+ * вешаем на последний блок пачки, остальные просто получают пометку "см. ниже". */
+function attachResponseToBlock(batch: Block[], parsed: ReturnType<typeof parseAgentResponse>, rawText: string) {
+  const target = batch[batch.length - 1];
+  const el = target && blockElements.get(target.id);
+  if (!el) return;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "block-reply";
+
+  if (parsed.isSkip) {
+    wrapper.classList.add("skip");
+    wrapper.textContent = "▸ (нечего добавить — SKIP)";
+    el.appendChild(wrapper);
+    return;
+  }
+
+  const summary = document.createElement("button");
+  summary.type = "button";
+  summary.className = "block-reply-summary";
+  summary.textContent = `▸ ${parsed.summary || "(ответ агента)"}`;
+
+  const detail = document.createElement("div");
+  detail.className = "block-reply-detail collapsed";
+  detail.innerHTML = renderAgentMarkdown(rawText);
+
+  summary.addEventListener("click", () => detail.classList.toggle("collapsed"));
+
+  wrapper.append(summary, detail);
+  el.appendChild(wrapper);
 }
 
 function renderOsc(e: OscLogEntry) {
@@ -504,6 +576,7 @@ function trySendPending() {
   agentBusy = true;
   pendingKind = "blocks";
   pendingBlocksCount = batch.length;
+  pendingBatch = batch;
   updateChatInputEnabled();
   const text = redactSecrets(`${contextLine()}\n\n${formatBlocksForAgent(batch)}`);
   agent.sendText(text).catch((err) => {
@@ -562,11 +635,13 @@ btnAgentStart.addEventListener("click", async () => {
           } else {
             addChatMessage("agent", wasBlocks ? `[по ${pendingBlocksCount} блок(ам)] ${text}` : text);
           }
+          if (wasBlocks) attachResponseToBlock(pendingBatch, parsed, text);
           if (isError) addChatMessage("system", "⚠ ход диалога завершился с ошибкой");
           agentStatusEl.textContent = agentStatusEl.textContent.replace(/\$[\d.]+$/, `$${sessionCostUsd.toFixed(4)}`);
 
           agentBusy = false;
           pendingKind = null;
+          pendingBatch = [];
           updateChatInputEnabled();
           trySendPending(); // разгружаем очередь блоков, накопившуюся пока агент отвечал
         },

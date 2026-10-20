@@ -189,6 +189,21 @@ textarea:focus {
   min-height: 0;
 }
 
+/* Режимы интерфейса (ТЗ, разд. "Режимы интерфейса"): MVP — только "Чат" и "Терминал",
+   "Сплит" (оба сразу, текущее поведение по умолчанию) — следующий этап. */
+.shell[data-mode="chat"] .pane-term,
+.shell[data-mode="chat"] .pane-side {
+  display: none;
+}
+.shell[data-mode="chat"] .pane-chat {
+  flex: 1;
+  max-width: none;
+}
+
+.shell[data-mode="terminal"] .pane-chat {
+  display: none;
+}
+
 .pane {
   padding: 0.7rem 0.9rem;
   overflow: auto;
@@ -427,6 +442,48 @@ textarea:focus {
 
 .osc-log div {
   color: var(--text-dim);
+}
+
+/* Ответ агента, прикреплённый под своим блоком (режим "Терминал", ТЗ) */
+.block-reply {
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.35rem;
+}
+
+.block-reply.skip {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.block-reply-summary {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.block-reply-detail {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.block-reply-detail.collapsed {
+  display: none;
+}
+
+.block-reply-detail pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+  overflow-x: auto;
 }
 
 /* ===== Скроллбары (однородно с тёмной темой) ===== */
