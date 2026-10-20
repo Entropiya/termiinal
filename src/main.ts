@@ -70,8 +70,6 @@ btnSideToggle.addEventListener("click", () => {
 
 setSideCollapsed(localStorage.getItem(SIDE_COLLAPSED_KEY) === "1");
 
-const btnAgentStart = document.querySelector<HTMLButtonElement>("#btn-agent-start")!;
-const btnAgentStop = document.querySelector<HTMLButtonElement>("#btn-agent-stop")!;
 const agentPolicyEl = document.querySelector<HTMLSelectElement>("#agent-policy")!;
 const btnGlance = document.querySelector<HTMLButtonElement>("#btn-glance")!;
 const agentStatusEl = document.querySelector<HTMLSpanElement>("#agent-status")!;
@@ -681,8 +679,6 @@ function setAgentMessageHtml(div: HTMLDivElement, text: string) {
 }
 
 function setAgentActive(active: boolean) {
-  btnAgentStart.disabled = active;
-  btnAgentStop.disabled = !active;
   btnGlance.disabled = !active;
   updateChatInputEnabled();
 }
@@ -714,7 +710,7 @@ function trySendPending() {
   });
 }
 
-btnAgentStart.addEventListener("click", async () => {
+async function startAgentSession() {
   agentStatusEl.textContent = "запускается…";
   setAgentDot("starting");
   try {
@@ -728,13 +724,15 @@ btnAgentStart.addEventListener("click", async () => {
         onInit: (e) => {
           const isolated = e.tools.length === 0 && e.mcp_servers.length === 0;
           setAgentDot(isolated ? "on" : "error");
-          agentStatusEl.textContent = `${e.model} · изоляция: ${isolated ? "подтверждена (0 инструментов)" : `⚠ ${e.tools.length} инстр./${e.mcp_servers.length} MCP`} · $${sessionCostUsd.toFixed(4)}`;
-          addChatMessage(
-            "system",
-            isolated
-              ? "Сессия агента поднята, инструментов и MCP-серверов нет — подтверждено из system/init."
-              : `⚠ Внимание: у агента есть доступные инструменты (${e.tools.join(", ") || "—"}) или MCP-серверы (${e.mcp_servers.length}). Изоляция не подтверждена.`,
-          );
+          agentStatusEl.textContent = `${e.model} · $${sessionCostUsd.toFixed(4)}`;
+          // Молчим, когда всё в порядке — предупреждаем только если изоляция НЕ
+          // подтвердилась, это единственное, что реально требует внимания пользователя.
+          if (!isolated) {
+            addChatMessage(
+              "system",
+              `⚠ Внимание: у агента есть доступные инструменты (${e.tools.join(", ") || "—"}) или MCP-серверы (${e.mcp_servers.length}). Изоляция не подтверждена.`,
+            );
+          }
         },
         onTextDelta: (delta) => {
           if (!streamingDiv) {
@@ -796,10 +794,13 @@ btnAgentStart.addEventListener("click", async () => {
     agentStatusEl.textContent = `ошибка запуска: ${err}`;
     setAgentDot("error");
   }
-});
+}
 
-btnAgentStop.addEventListener("click", () => {
-  agent?.stop();
+// Отдельных кнопок старт/стоп больше нет — сам статус кликабелен: "не запущен" запускает,
+// название модели (пока агент жив) останавливает.
+agentStatusEl.addEventListener("click", () => {
+  if (agent) agent.stop();
+  else startAgentSession();
 });
 
 chatFormEl.addEventListener("submit", (e) => {

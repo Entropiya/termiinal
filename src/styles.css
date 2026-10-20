@@ -337,6 +337,16 @@ textarea:focus {
   flex: 1;
 }
 
+.agent-status-toggle {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.agent-status-toggle:hover {
+  color: var(--text);
+}
+
 .chat-log {
   flex: 1;
   min-height: 0;

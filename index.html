@@ -51,25 +51,18 @@
           <div class="chat-header">
             <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">👁 Глянь</button>
             <h2>Чат с агентом</h2>
+            <label class="policy-label">
+              Политика
+              <select id="agent-policy">
+                <option value="auto" selected>Авто</option>
+                <option value="errors-only">Только ошибки</option>
+                <option value="manual">Вручную</option>
+              </select>
+            </label>
             <span class="status">
               <span id="agent-dot" class="dot dot-off"></span>
-              <span id="agent-status">не запущен</span>
+              <span id="agent-status" class="agent-status-toggle" title="Нажми, чтобы запустить/остановить агента">не запущен</span>
             </span>
-            <details class="dropdown dropdown-right">
-              <summary title="Управление агентом">⋮</summary>
-              <div class="dropdown-menu">
-                <button id="btn-agent-start" class="btn-primary">Запустить агента</button>
-                <button id="btn-agent-stop" disabled class="btn-danger">Остановить агента</button>
-                <label class="policy-label">
-                  Политика
-                  <select id="agent-policy">
-                    <option value="auto" selected>Авто</option>
-                    <option value="errors-only">Только ошибки</option>
-                    <option value="manual">Вручную</option>
-                  </select>
-                </label>
-              </div>
-            </details>
           </div>
           <div id="chat-log" class="chat-log"></div>
           <form id="chat-form" class="chat-form">
