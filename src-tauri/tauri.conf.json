@@ -13,9 +13,9 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "terminal-mentor",
-        "width": 800,
-        "height": 600
+        "title": "terminal-mentor — этап 1: прототип рисков",
+        "width": 1280,
+        "height": 860
       }
     ],
     "security": {
