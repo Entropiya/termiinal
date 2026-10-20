@@ -244,8 +244,16 @@ agentPolicyEl.addEventListener("change", () => {
 // блоке -> снимок текущего экрана" — отдельная фича, требует доступа к живому буферу
 // xterm.js посреди выполнения команды, сделаем отдельным шагом.
 btnGlance.addEventListener("click", () => {
-  if (!lastClosedBlock) return;
+  if (!lastClosedBlock) {
+    // Раньше молча ничего не делала — самая вероятная причина "не работает":
+    // блоков ещё нет (интеграция не внедрена или ни одна команда не завершилась).
+    addChatMessage("system", "⚠ «Глянь»: ещё нет ни одного закрытого блока — нажми «Внедрить интеграцию» и выполни команду в шелле.");
+    return;
+  }
   pendingBlockQueue.push(lastClosedBlock);
+  if (agentBusy) {
+    addChatMessage("system", "«Глянь»: агент занят, блок встал в очередь.");
+  }
   trySendPending();
 });
 
