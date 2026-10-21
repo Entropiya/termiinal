@@ -16,6 +16,7 @@ import { classifyPaste, type DangerMatch } from "./paste-guard";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -1154,6 +1155,19 @@ chatInputEl.addEventListener("keydown", (e) => {
     toggleAddressTarget();
   }
 });
+
+// ===== Метка версии — правый нижний угол лаунчера и строка в "Дополнительно" =====
+// Берём настоящую версию из рантайма (getVersion), а не дублируем число из
+// package.json/tauri.conf.json руками — иначе на следующем релизе кто-то забудет
+// поправить одно из трёх мест, и метка начнёт врать.
+const launcherVersionEl = document.querySelector<HTMLSpanElement>("#launcher-version")!;
+const sessionVersionEl = document.querySelector<HTMLSpanElement>("#session-version")!;
+getVersion()
+  .then((v) => {
+    launcherVersionEl.textContent = `v${v}`;
+    sessionVersionEl.textContent = `v${v}`;
+  })
+  .catch((err) => console.warn("[app] getVersion", err));
 
 // ===== Настройки (шестерёнка в углу + то же меню в "Дополнительно" внутри сессии) =====
 // Одно общее окошко на оба входа — задел места под будущие настройки, не только

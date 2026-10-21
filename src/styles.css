@@ -319,6 +319,30 @@ body {
   display: none;
 }
 
+/* Метка версии — там же, где шестерёнка (правый угол окна менеджера подключений),
+   только внизу; видна по той же логике, только пока нет сессии. Версию не хардкодим
+   отдельной строкой — берём настоящую через @tauri-apps/api/app (getVersion), чтобы
+   не разъезжалась с package.json/tauri.conf.json при следующем релизе. */
+.launcher-version {
+  position: fixed;
+  bottom: 0.5rem;
+  right: 0.8rem;
+  z-index: 60;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.shell[data-session="active"] .launcher-version {
+  display: none;
+}
+
+.dropdown-version {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  user-select: none;
+}
+
 /* "Завершить сессию" + "Дополнительно" — обычный поток шапки (не fixed), у #status
    над ними уже есть margin-left: auto, оно же тянет и эту пару следом за собой к
    правому краю. Раньше были position:fixed с ручным top/отступом — из-за этого
