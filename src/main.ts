@@ -1156,12 +1156,63 @@ chatInputEl.addEventListener("keydown", (e) => {
 // latest.json (см. src-tauri/tauri.conf.json), который заливает CI при релизе (см.
 // .github/workflows/release.yml). Баннер поверх всего — независимо от того, идёт
 // сессия или открыт лаунчер, обновление может понадобиться в любом из состояний.
+//
+// Мажорное/минорное различаем по первому числу семвера (ТЗ не про это, решение из
+// чата с пользователем): "1.0 -> 1.1" минорное, "1.x -> 2.0" мажорное. У каждого
+// свой тумблер "ставить автоматом" в "Дополнительно" (см. ниже) — по умолчанию
+// минорные автоматом, мажорные только по явному подтверждению, пока пользователь
+// сам не включит для них автомат тоже.
 const updateBannerEl = document.querySelector<HTMLDivElement>("#update-banner")!;
 const updateBannerTextEl = document.querySelector<HTMLSpanElement>("#update-banner-text")!;
 const btnUpdateInstall = document.querySelector<HTMLButtonElement>("#btn-update-install")!;
 const btnUpdateDismiss = document.querySelector<HTMLButtonElement>("#btn-update-dismiss")!;
+const chkAutoUpdateMinor = document.querySelector<HTMLInputElement>("#chk-auto-update-minor")!;
+const chkAutoUpdateMajor = document.querySelector<HTMLInputElement>("#chk-auto-update-major")!;
+
+const AUTO_UPDATE_MINOR_KEY = "termiinal:auto-update-minor";
+const AUTO_UPDATE_MAJOR_KEY = "termiinal:auto-update-major";
+
+function getAutoUpdateMinor(): boolean {
+  const v = localStorage.getItem(AUTO_UPDATE_MINOR_KEY);
+  return v === null ? true : v === "1"; // по умолчанию — да
+}
+
+function getAutoUpdateMajor(): boolean {
+  const v = localStorage.getItem(AUTO_UPDATE_MAJOR_KEY);
+  return v === null ? false : v === "1"; // по умолчанию — нет
+}
+
+chkAutoUpdateMinor.checked = getAutoUpdateMinor();
+chkAutoUpdateMajor.checked = getAutoUpdateMajor();
+chkAutoUpdateMinor.addEventListener("change", () => {
+  localStorage.setItem(AUTO_UPDATE_MINOR_KEY, chkAutoUpdateMinor.checked ? "1" : "0");
+});
+chkAutoUpdateMajor.addEventListener("change", () => {
+  localStorage.setItem(AUTO_UPDATE_MAJOR_KEY, chkAutoUpdateMajor.checked ? "1" : "0");
+});
+
+function semverMajor(v: string): number {
+  const n = Number.parseInt(v.split(".")[0] ?? "", 10);
+  return Number.isFinite(n) ? n : 0;
+}
 
 let pendingUpdate: Awaited<ReturnType<typeof checkForUpdate>> | null = null;
+
+async function performInstall(update: NonNullable<typeof pendingUpdate>, kind: "минорное" | "мажорное") {
+  try {
+    // downloadAndInstall долго (скачивание + запуск инсталлятора) — в сессии при этом
+    // может идти работа, поэтому не блокируем остальной интерфейс, только баннер.
+    await update.downloadAndInstall();
+    await relaunch();
+  } catch (err) {
+    console.warn("[updater] install", err);
+    updateBannerTextEl.textContent = `Не удалось поставить ${kind} обновление: ${err}`;
+    btnUpdateInstall.hidden = false;
+    btnUpdateInstall.disabled = false;
+    btnUpdateInstall.textContent = "Установить и перезапустить";
+    btnUpdateDismiss.hidden = false;
+  }
+}
 
 async function checkForUpdatesOnce() {
   let update: Awaited<ReturnType<typeof checkForUpdate>>;
@@ -1173,25 +1224,32 @@ async function checkForUpdatesOnce() {
   }
   if (!update) return;
   pendingUpdate = update;
-  updateBannerTextEl.textContent = `Доступно обновление ${update.version} (сейчас ${update.currentVersion}).`;
+
+  const isMajor = semverMajor(update.version) > semverMajor(update.currentVersion);
+  const kind = isMajor ? "мажорное" : "минорное";
+  const auto = isMajor ? getAutoUpdateMajor() : getAutoUpdateMinor();
+
   updateBannerEl.classList.remove("hidden");
+  if (auto) {
+    updateBannerTextEl.textContent = `Ставится ${kind} обновление ${update.version}…`;
+    btnUpdateInstall.hidden = true;
+    btnUpdateDismiss.hidden = true;
+    await performInstall(update, kind);
+    return;
+  }
+  updateBannerTextEl.textContent = `Есть ${kind} обновление ${update.version} (сейчас ${update.currentVersion}). Установить?`;
+  btnUpdateInstall.hidden = false;
+  btnUpdateDismiss.hidden = false;
 }
 
 btnUpdateInstall.addEventListener("click", async () => {
   if (!pendingUpdate) return;
+  const isMajor = semverMajor(pendingUpdate.version) > semverMajor(pendingUpdate.currentVersion);
+  const kind = isMajor ? "мажорное" : "минорное";
   btnUpdateInstall.disabled = true;
   btnUpdateInstall.textContent = "Скачивание…";
-  try {
-    // downloadAndInstall долго (скачивание + запуск инсталлятора) — в сессии при этом
-    // может идти работа, поэтому не блокируем остальной интерфейс, только эту кнопку.
-    await pendingUpdate.downloadAndInstall();
-    await relaunch();
-  } catch (err) {
-    console.warn("[updater] install", err);
-    btnUpdateInstall.disabled = false;
-    btnUpdateInstall.textContent = "Установить и перезапустить";
-    updateBannerTextEl.textContent = `Не удалось установить обновление: ${err}`;
-  }
+  btnUpdateDismiss.hidden = true;
+  await performInstall(pendingUpdate, kind);
 });
 
 btnUpdateDismiss.addEventListener("click", () => {

@@ -276,6 +276,31 @@ body {
   text-align: left;
 }
 
+.dropdown-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 0.1rem 0;
+}
+
+.dropdown-section-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.dropdown-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.dropdown-check input {
+  accent-color: var(--accent);
+}
+
 /* ===== Элементы управления ===== */
 
 button {
@@ -648,9 +673,11 @@ textarea:focus {
   display: none;
 }
 
-/* Верхний бар целиком нужен только внутри сессии (саммари хоста, "Завершить сессию",
-   "Дополнительно", статус) — пока сессии нет, всё это заменяет сам экран лаунчера. */
-.shell:not([data-session="active"]) .toolbar-connect {
+/* Лого сессии, "Завершить сессию" и статус — только внутри сессии, их заменяет сам
+   экран лаунчера. "Дополнительно" — исключение: там теперь ещё и настройки
+   автообновления (см. index.html), которые должны быть доступны и до подключения,
+   раз баннер обновления может появиться прямо на стартовом экране. */
+.shell:not([data-session="active"]) .toolbar-connect > :not(.dropdown) {
   display: none;
 }
 
