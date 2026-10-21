@@ -42,7 +42,6 @@ document.addEventListener("click", (e) => {
 });
 
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
-const DEFAULT_SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
 
 const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
 const shellEl = document.querySelector<HTMLElement>(".shell")!;
@@ -813,7 +812,7 @@ function clearPresetFields() {
   presetUserEl.value = "";
   presetHostEl.value = "";
   presetPortEl.value = "";
-  presetKeyEl.value = DEFAULT_SSH_KEY;
+  presetKeyEl.value = "";
 }
 
 function currentFieldsAsPreset(id: string): ConnectionPreset {
@@ -860,9 +859,14 @@ function connectSsh() {
     return;
   }
   const port = presetPortEl.value.trim();
-  const keyPath = presetKeyEl.value.trim() || DEFAULT_SSH_KEY;
+  const keyPath = presetKeyEl.value.trim();
   const target = `${user}@${host}`;
-  const args = ["-i", keyPath];
+  const args: string[] = [];
+  // Поле ключа необязательно — без него ssh.exe сам ищет свои обычные дефолты
+  // (~/.ssh/id_ed25519, id_rsa и т.п.), ровно как обычный ssh-клиент. Раньше тут
+  // был жёстко зашитый путь к личному ключу разработчика — у любого, кто скачал
+  // бы готовый exe, подставлялся бы ЕГО путь, а не их собственный.
+  if (keyPath) args.push("-i", keyPath);
   if (port) args.push("-p", port);
   args.push(target);
   // Без -o StrictHostKeyChecking — подтверждение отпечатка хоста при первом подключении
@@ -924,7 +928,7 @@ function renderLauncherList() {
       presetUserEl.value = p.user;
       presetHostEl.value = p.host;
       presetPortEl.value = p.port ? String(p.port) : "";
-      presetKeyEl.value = p.keyPath ?? DEFAULT_SSH_KEY;
+      presetKeyEl.value = p.keyPath ?? "";
       connectedFromSavedPreset = true;
       connectSsh();
     });
