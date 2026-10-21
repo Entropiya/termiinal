@@ -48,7 +48,26 @@ const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
 const shellEl = document.querySelector<HTMLElement>(".shell")!;
 const btnSsh = document.querySelector<HTMLButtonElement>("#btn-ssh")!;
 const btnConnect = document.querySelector<HTMLButtonElement>("#btn-connect")!;
-const sessionSummaryEl = document.querySelector<HTMLSpanElement>("#session-summary")!;
+const sessionLogoEl = document.querySelector<HTMLDivElement>("#session-logo")!;
+
+type LogoMood = "idle" | "hint" | "thinking";
+
+function setLogoMood(mood: LogoMood) {
+  sessionLogoEl.dataset.mood = mood;
+}
+
+// "Подсказка" держится несколько секунд, потом сама возвращается в "смотрит в шелл" —
+// не держим мышью/кликом, просто ненавязчивый всплеск внимания на новый ответ.
+let logoHintTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flashLogoHint() {
+  if (logoHintTimer) clearTimeout(logoHintTimer);
+  setLogoMood("hint");
+  logoHintTimer = setTimeout(() => {
+    logoHintTimer = null;
+    setLogoMood("idle");
+  }, 4000);
+}
 const presetNameEl = document.querySelector<HTMLInputElement>("#preset-name")!;
 const presetUserEl = document.querySelector<HTMLInputElement>("#preset-user")!;
 const presetHostEl = document.querySelector<HTMLInputElement>("#preset-host")!;
@@ -244,8 +263,8 @@ const term = new Terminal({
   theme: {
     background: "#16161a",
     foreground: "#e3e3e6",
-    cursor: "#5aa8ff",
-    selectionBackground: "#5aa8ff55",
+    cursor: "#10e0a8",
+    selectionBackground: "#10e0a855",
   },
 });
 const fitAddon = new FitAddon();
@@ -734,7 +753,8 @@ const SESSION_WINDOW_SIZE = new LogicalSize(1280, 860);
 function setSessionActive(active: boolean) {
   btnIntegrate.disabled = !active;
   shellEl.dataset.session = active ? "active" : "idle";
-  sessionSummaryEl.textContent = active ? currentSessionLabel ?? "" : "";
+  sessionLogoEl.title = active ? currentSessionLabel ?? "" : "";
+  if (active) setLogoMood("idle");
   if (!active) {
     hideSavePrompt();
     hidePasteDangerPrompt();
@@ -979,12 +999,14 @@ function trySendPending() {
   pendingBlocksCount = batch.length;
   pendingBatch = batch;
   updateChatInputEnabled();
+  setLogoMood("thinking");
   const text = redactSecrets(`${contextLine()}\n\n${formatBlocksForAgent(batch)}`);
   agent.sendText(text).catch((err) => {
     addChatMessage("system", `⚠ ошибка отправки блока(ов): ${err}`);
     agentBusy = false;
     pendingKind = null;
     updateChatInputEnabled();
+    setLogoMood("idle");
   });
 }
 
@@ -1045,6 +1067,10 @@ async function startAgentSession() {
           if (wasBlocks) attachResponseToBlock(pendingBatch, parsed, text);
           if (isError) addChatMessage("system", "⚠ ход диалога завершился с ошибкой");
           agentStatusEl.textContent = agentStatusEl.textContent.replace(/\$[\d.]+$/, `$${sessionCostUsd.toFixed(4)}`);
+          // "Подсказка" — только когда реально есть что посмотреть; на SKIP/ошибку
+          // возвращаемся к нейтральному "смотрит в шелл" сразу, без лишнего всплеска.
+          if (!parsed.isSkip && !isError) flashLogoHint();
+          else setLogoMood("idle");
 
           agentBusy = false;
           pendingKind = null;
@@ -1068,6 +1094,7 @@ async function startAgentSession() {
           pendingKind = null;
           pendingBlockQueue = [];
           setAgentActive(false);
+          setLogoMood("idle");
         },
       },
     });
@@ -1099,6 +1126,7 @@ chatFormEl.addEventListener("submit", (e) => {
   agentBusy = true;
   pendingKind = "chat";
   updateChatInputEnabled();
+  setLogoMood("thinking");
   // Агенту уходит уже отредактированная копия — см. ТЗ, разд. "Безопасность и приватность":
   // затирается всё, что уходит агенту, включая сообщения в чат (пользователь мог вставить
   // в чат кусок конфига или вывода с секретом, не только печатать команды в терминал).
@@ -1107,6 +1135,7 @@ chatFormEl.addEventListener("submit", (e) => {
     agentBusy = false;
     pendingKind = null;
     updateChatInputEnabled();
+    setLogoMood("idle");
   });
 });
 

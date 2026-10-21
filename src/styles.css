@@ -10,9 +10,11 @@
   --border-soft: #2a2b2f;
   --text: #e3e3e6;
   --text-dim: #9a9ba3;
-  --accent: #5aa8ff;
-  --accent-hover: #78b9ff;
-  --accent-text: #0b1220;
+  /* Мятно-бирюзовый — цвет из лого (см. docs/stage5.md, снято замером пикселей со
+     скриншота наброска лого: #10E0A8). Раньше тут был синий #5aa8ff. */
+  --accent: #10e0a8;
+  --accent-hover: #3ceabe;
+  --accent-text: #06231c;
   --danger: #e06c75;
   --danger-hover: #ea7e86;
   --ok: #4fd68c;
@@ -55,9 +57,10 @@ body {
 
 /* Поля редактирования подключения (пресет/адрес/ключ) живут внутри стартового экрана
    (.launcher), а не в шапке — шапка должна оставаться узкой и для маленького окна
-   "менеджера подключений", и для рабочей сессии, где от неё нужно только саммари и
-   кнопка завершения (см. .session-summary ниже и ТЗ не при чём — это с пользователем
-   согласовано в чате, а-ля PuTTY: один компактный диалог, не широкая строка полей). */
+   "менеджера подключений", и для рабочей сессии, где от неё нужно только лого-индикатор
+   агента (см. .session-logo ниже) и кнопка завершения. ТЗ не при чём — это с
+   пользователем согласовано в чате, а-ля PuTTY: один компактный диалог, не широкая
+   строка полей). */
 .conn-fields {
   display: flex;
   flex-direction: column;
@@ -94,13 +97,103 @@ body {
   font-size: 0.85rem;
 }
 
-.session-summary {
+/* ===== Лого-индикатор сессии (заменяет текстовое саммари "user@host") — живой
+   значок агента: "Term(ii)nal", где "ii" стилизованы под зрачки, а бровь над ними
+   отражает, чем занят агент сейчас (см. setLogoMood в main.ts). Подсказка (title)
+   при наведении — имя/адрес хоста, вместо всегда видимого текста. ===== */
+.session-logo {
   display: none;
-  font-weight: 600;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: default;
+  user-select: none;
 }
 
-.shell[data-session="active"] .session-summary {
-  display: inline;
+.shell[data-session="active"] .session-logo {
+  display: inline-flex;
+}
+
+.logo-prompt {
+  color: var(--accent);
+}
+
+.logo-word {
+  display: inline-flex;
+  align-items: center;
+}
+
+.bracket {
+  color: var(--accent);
+  padding: 0 1px;
+}
+
+.logo-face {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding-top: 7px; /* место под бровь, которая рисуется абсолютно над глазами */
+}
+
+.eye {
+  width: 5px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+  transform-origin: center;
+  animation: logo-blink 5.5s infinite;
+}
+
+.eye:nth-child(3) {
+  animation-delay: 0.06s;
+}
+
+@keyframes logo-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.12);
+  }
+}
+
+.brow-svg {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 8px;
+  overflow: visible;
+}
+
+.brow-svg circle {
+  fill: var(--accent);
+}
+
+.brow-svg path {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  fill: none;
+  stroke-linecap: round;
+}
+
+.brow-idle,
+.brow-hint,
+.brow-thinking {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.session-logo[data-mood="idle"] .brow-idle,
+.session-logo[data-mood="hint"] .brow-hint,
+.session-logo[data-mood="thinking"] .brow-thinking {
+  opacity: 1;
 }
 
 .policy-label {

@@ -17,7 +17,30 @@
 
     <main class="shell">
       <header class="toolbar toolbar-connect">
-        <span id="session-summary" class="session-summary"></span>
+        <div id="session-logo" class="session-logo" data-mood="idle" title="">
+          <span class="logo-prompt">&gt;_</span>
+          <span class="logo-word"
+            >Term<span class="logo-face">
+              <span class="bracket">(</span>
+              <span class="eye"></span><span class="eye"></span>
+              <svg class="brow-svg" viewBox="0 0 22 9">
+                <g class="brow brow-idle">
+                  <circle cx="5" cy="4" r="1.5" />
+                  <circle cx="17" cy="4" r="1.5" />
+                </g>
+                <g class="brow brow-hint">
+                  <circle cx="5" cy="5" r="1.5" />
+                  <path d="M12 6 Q 17 0 21 4" />
+                </g>
+                <g class="brow brow-thinking">
+                  <path d="M1 4 Q 4 1 7 4" />
+                  <path d="M15 4 Q 18 1 21 4" />
+                </g>
+              </svg>
+              <span class="bracket">)</span>
+            </span>nal</span
+          >
+        </div>
 
         <button id="btn-ssh" class="btn-danger">Завершить сессию</button>
 
