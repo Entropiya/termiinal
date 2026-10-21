@@ -32,8 +32,8 @@
 
 ## Ключ подписи обновлений
 
-Сгенерирован локально: `.tauri-keys/terminal-mentor-updater.key` (приватный,
-зашифрован паролем) + `.tauri-keys/terminal-mentor-updater.key.pub` (публичный, его
+Сгенерирован локально: `.tauri-keys/termiinal-updater.key` (приватный,
+зашифрован паролем) + `.tauri-keys/termiinal-updater.key.pub` (публичный, его
 содержимое уже вписано в `tauri.conf.json`). Пароль — `.tauri-keys/updater-key-password.txt`.
 
 **Вся папка `.tauri-keys/` — в `.gitignore`, НИКОГДА не коммитится**, даже в публичный
@@ -52,7 +52,7 @@
 в Settings → Secrets and variables → Actions добавить два секрета (значения — печатать
 их в терминал через Claude Code запретил сам классификатор auto mode, это и правильно
 для секрета; открыть файлы и скопировать значения нужно руками):
-- `TAURI_SIGNING_PRIVATE_KEY` — содержимое `.tauri-keys/terminal-mentor-updater.key`;
+- `TAURI_SIGNING_PRIVATE_KEY` — содержимое `.tauri-keys/termiinal-updater.key`;
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — содержимое
   `.tauri-keys/updater-key-password.txt`.
 

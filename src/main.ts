@@ -74,9 +74,8 @@ const blocksEl = document.querySelector<HTMLDivElement>("#blocks")!;
 // интерфейса"): "Сплит" получается сам собой, когда показаны все панели сразу, а не
 // отдельным режимом. См. обсуждение в docs/stage3.md.
 //
-// Ключ для "side" оставлен старым (`terminal-mentor:side-collapsed`) specifically —
-// раньше это была кнопка "свернуть Блоки в бок" с той же семантикой (1 = спрятано),
-// так сохранённая у пользователя настройка не сбрасывается этим рефакторингом.
+// Ключи localStorage — с префиксом "termiinal:" (имя проекта; до переименования был
+// "terminal-mentor:" — проект ещё не раздавался никому, менять без миграции безопасно).
 const paneTermEl = document.querySelector<HTMLElement>("#pane-term")!;
 const paneChatEl = document.querySelector<HTMLElement>("#pane-chat")!;
 const panePlanEl = document.querySelector<HTMLElement>("#pane-plan")!;
@@ -91,10 +90,10 @@ interface DockPane {
 type PaneId = "term" | "chat" | "plan" | "side";
 
 const dockPanes: Record<PaneId, DockPane> = {
-  term: { el: paneTermEl, btn: document.querySelector<HTMLButtonElement>("#dock-term")!, storageKey: "terminal-mentor:term-hidden" },
-  chat: { el: paneChatEl, btn: document.querySelector<HTMLButtonElement>("#dock-chat")!, storageKey: "terminal-mentor:chat-hidden" },
-  plan: { el: panePlanEl, btn: document.querySelector<HTMLButtonElement>("#dock-plan")!, storageKey: "terminal-mentor:plan-hidden" },
-  side: { el: paneSideEl, btn: document.querySelector<HTMLButtonElement>("#dock-blocks")!, storageKey: "terminal-mentor:side-collapsed" },
+  term: { el: paneTermEl, btn: document.querySelector<HTMLButtonElement>("#dock-term")!, storageKey: "termiinal:term-hidden" },
+  chat: { el: paneChatEl, btn: document.querySelector<HTMLButtonElement>("#dock-chat")!, storageKey: "termiinal:chat-hidden" },
+  plan: { el: panePlanEl, btn: document.querySelector<HTMLButtonElement>("#dock-plan")!, storageKey: "termiinal:plan-hidden" },
+  side: { el: paneSideEl, btn: document.querySelector<HTMLButtonElement>("#dock-blocks")!, storageKey: "termiinal:side-collapsed" },
 };
 
 // Порядок панелей в DOM/на экране — для расстановки разделителей между соседями.
@@ -108,7 +107,7 @@ const PANE_MIN_WIDTH: Record<PaneId, number> = { term: 240, chat: 280, plan: 220
 // px при ресайзе окна). Если видна только одна панель — у неё нет соседей, делящих
 // flex-grow, так что она естественно занимает всю ширину без доп. кода. =====
 function paneGrowKey(id: PaneId): string {
-  return `terminal-mentor:pane-grow:${id}`;
+  return `termiinal:pane-grow:${id}`;
 }
 
 function getPaneGrow(id: PaneId): number {
@@ -754,7 +753,7 @@ function setSessionActive(active: boolean) {
     .then(() => win.center())
     .catch((err) => console.warn("[window] setSize/center", err));
   win
-    .setTitle(active && currentSessionLabel ? `${currentSessionLabel} — terminal-mentor` : "terminal-mentor")
+    .setTitle(active && currentSessionLabel ? `${currentSessionLabel} — termiinal` : "termiinal")
     .catch((err) => console.warn("[window] setTitle", err));
 }
 

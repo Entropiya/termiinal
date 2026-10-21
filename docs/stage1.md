@@ -110,4 +110,6 @@ Visual Studio Build Tools (workload VCTools, для MSVC-линковки Rust),
 `stable-x86_64-pc-windows-msvc`, активен по умолчанию).
 
 Скаффолд: `npm create tauri-app@latest` — шаблон `vanilla-ts`, менеджер `npm`,
-identifier `com.pakochka.terminalmentor`.
+identifier `com.pakochka.terminalmentor` (проект назывался `terminal-mentor`;
+переименован в `termiinal`, см. `com.pakochka.termiinal` в текущем
+`src-tauri/tauri.conf.json`).

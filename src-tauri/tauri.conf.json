@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "terminal-mentor",
+  "productName": "termiinal",
   "version": "0.1.0",
-  "identifier": "com.pakochka.terminalmentor",
+  "identifier": "com.pakochka.termiinal",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "terminal-mentor",
+        "title": "termiinal",
         "width": 460,
         "height": 640,
         "resizable": false,

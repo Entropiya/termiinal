@@ -15,7 +15,7 @@ export interface ConnectionPreset {
   keyPath?: string;
 }
 
-const STORAGE_KEY = "terminal-mentor:presets";
+const STORAGE_KEY = "termiinal:presets";
 
 export function loadPresets(): ConnectionPreset[] {
   try {
