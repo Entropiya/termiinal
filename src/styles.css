@@ -53,6 +53,9 @@ body {
 
 .toolbar-connect {
   background: var(--surface-2);
+  /* Запас справа — чтобы #status (margin-left: auto, см. ниже) не заезжал под
+     .session-corner (fixed, "Завершить сессию" + "Дополнительно" в правом углу). */
+  padding-right: 13rem;
 }
 
 /* Поля редактирования подключения (пресет/адрес/ключ) живут внутри стартового экрана
@@ -308,6 +311,29 @@ body {
 .settings-gear:hover {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* В сессии шестерёнка дублировала бы "Настройки…" из "Дополнительно" (см.
+   .session-corner ниже, туда же переехали "Завершить сессию" и само
+   "Дополнительно", в тот же правый верхний угол, который раньше занимала только
+   шестерёнка) — так что в сессии её прячем, оставляем только для стартового
+   экрана, где "Дополнительно" ещё не на виду. */
+.shell[data-session="active"] .settings-gear {
+  display: none;
+}
+
+.session-corner {
+  display: none;
+  position: fixed;
+  top: 0.6rem;
+  right: 0.7rem;
+  z-index: 60;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.shell[data-session="active"] .session-corner {
+  display: flex;
 }
 
 .modal-overlay {

@@ -17,6 +17,21 @@
 
     <button id="btn-settings-gear" class="settings-gear" type="button" title="Настройки">⚙</button>
 
+    <div id="session-corner" class="session-corner">
+      <button id="btn-ssh" class="btn-danger">Завершить сессию</button>
+
+      <details class="dropdown dropdown-right">
+        <summary>Дополнительно ▾</summary>
+        <div class="dropdown-menu">
+          <button id="btn-integrate" disabled title="Внедрить OSC-хуки для нарезки на блоки в этой сессии">
+            Внедрить интеграцию вручную
+          </button>
+          <div class="dropdown-sep"></div>
+          <button id="btn-open-settings-menu" type="button">Настройки…</button>
+        </div>
+      </details>
+    </div>
+
     <div id="settings-modal" class="modal-overlay hidden">
       <div class="modal" role="dialog" aria-label="Настройки">
         <div class="modal-header">
@@ -63,19 +78,6 @@
             </span>nal</span
           >
         </div>
-
-        <button id="btn-ssh" class="btn-danger">Завершить сессию</button>
-
-        <details class="dropdown">
-          <summary>Дополнительно ▾</summary>
-          <div class="dropdown-menu">
-            <button id="btn-integrate" disabled title="Внедрить OSC-хуки для нарезки на блоки в этой сессии">
-              Внедрить интеграцию вручную
-            </button>
-            <div class="dropdown-sep"></div>
-            <button id="btn-open-settings-menu" type="button">Настройки…</button>
-          </div>
-        </details>
 
         <span id="status" class="status">не запущено</span>
       </header>
