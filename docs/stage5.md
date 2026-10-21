@@ -41,16 +41,22 @@
 смогут обновляться только после генерации НОВОГО ключа и смены `pubkey` в конфиге, то
 есть по сути придётся попросить всех переустановить вручную один раз.
 
-## Что нужно сделать руками (не автоматизируется без доступа к GitHub-аккаунту)
+## Репозиторий
 
-1. Создать **публичный** репозиторий на GitHub (например `terminal-mentor`).
-2. Подключить его как `origin` и запушить код.
-3. В Settings → Secrets and variables → Actions добавить два секрета:
-   - `TAURI_SIGNING_PRIVATE_KEY` — содержимое `.tauri-keys/terminal-mentor-updater.key`;
-   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — содержимое
-     `.tauri-keys/updater-key-password.txt`.
-4. Заменить `REPLACE_ME_GITHUB_OWNER` в `src-tauri/tauri.conf.json`
-   (`plugins.updater.endpoints`) на реальное имя владельца репозитория.
+Публичный, `https://github.com/Pakochka/termiinal` — создан пользователем, код туда
+запушен (ветка `main`, история смержена с автосозданным GitHub README через
+`--allow-unrelated-histories`, оставили свой README.md). Эндпоинт обновлятора в
+`src-tauri/tauri.conf.json` уже указывает на него.
+
+**Остался один шаг, который без доступа к GitHub-аккаунту не автоматизировать:**
+в Settings → Secrets and variables → Actions добавить два секрета (значения — печатать
+их в терминал через Claude Code запретил сам классификатор auto mode, это и правильно
+для секрета; открыть файлы и скопировать значения нужно руками):
+- `TAURI_SIGNING_PRIVATE_KEY` — содержимое `.tauri-keys/terminal-mentor-updater.key`;
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — содержимое
+  `.tauri-keys/updater-key-password.txt`.
+
+Без них CI на `tauri-apps/tauri-action` не сможет подписать релиз при пуше тега.
 
 ## Как выпускать релиз
 
