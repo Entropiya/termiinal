@@ -53,16 +53,54 @@ body {
   background: var(--surface-2);
 }
 
-.toolbar .sep {
-  width: 1px;
-  align-self: stretch;
-  background: var(--border);
-  margin: 0 0.2rem;
+/* Поля редактирования подключения (пресет/адрес/ключ) живут внутри стартового экрана
+   (.launcher), а не в шапке — шапка должна оставаться узкой и для маленького окна
+   "менеджера подключений", и для рабочей сессии, где от неё нужно только саммари и
+   кнопка завершения (см. .session-summary ниже и ТЗ не при чём — это с пользователем
+   согласовано в чате, а-ля PuTTY: один компактный диалог, не широкая строка полей). */
+.conn-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
-.toolbar .at {
+.conn-fields > input {
+  width: 100%;
+}
+
+.conn-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.conn-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+#preset-port {
+  flex: 0 0 4.5rem;
+}
+
+.conn-row #btn-connect,
+.conn-row #btn-preset-save {
+  flex: 1;
+}
+
+.at {
   opacity: 0.5;
   font-size: 0.85rem;
+}
+
+.session-summary {
+  display: none;
+  font-weight: 600;
+}
+
+.shell[data-session="active"] .session-summary {
+  display: inline;
 }
 
 .policy-label {
@@ -247,6 +285,47 @@ textarea:focus {
   position: relative;
 }
 
+/* ===== Панель задач — слева, список переключателей видимости панелей ===== */
+
+/* Узкая, во всю ширину буквально в одну "строку" текста — подписи идут вертикально
+   (writing-mode), а не горизонтально, чтобы панель не отъедала место у рабочих
+   панелей в сессии (было 6rem с горизонтальным текстом, стало ~1.9rem). */
+.task-panel {
+  flex: none;
+  width: 1.9rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  padding: 0.4rem 0.2rem;
+  background: var(--surface-2);
+  border-left: 1px solid var(--border-soft);
+}
+
+.dock-btn {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  padding: 0.5rem 0.15rem;
+  font-size: 0.72rem;
+  line-height: 1;
+  text-align: center;
+  border-radius: var(--radius);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+}
+
+.dock-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Включено — панель сейчас видна (не .pane-hidden). */
+.dock-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ===== Стартовый экран (а-ля PuTTY) — показывается, пока нет активной сессии ===== */
 
 .launcher {
@@ -257,6 +336,10 @@ textarea:focus {
   justify-content: center;
   background: var(--bg);
   z-index: 5;
+  /* Теперь внутри ещё и форма нового подключения (не только список пресетов) — если
+     когда-нибудь не влезет по высоте (длинный список пресетов в маленьком окне),
+     прокрутка лучше, чем обрезанный контент. */
+  overflow-y: auto;
 }
 
 .launcher-inner {
@@ -300,6 +383,25 @@ textarea:focus {
   font-style: italic;
 }
 
+/* "Новое подключение" явно отделена от списка сохранённых — своя рамка-карточка,
+   заметный отступ сверху и подпись не серым мелким текстом, как у "Сохранённые
+   подключения" (иначе всё визуально сливается в одну кашу, см. правку по просьбе
+   пользователя). */
+.new-conn-section {
+  margin-top: 1.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.new-conn-heading {
+  font-size: 0.95rem;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--accent);
+  font-weight: 700;
+  margin: 0 0 0.6rem;
+}
+
 .launcher-preset {
   display: flex;
   align-items: center;
@@ -331,6 +433,32 @@ textarea:focus {
 
 /* ===== Баннер "сохранить как пресет?" ===== */
 
+/* ===== Баннер "доступно обновление" — поверх всего, независимо от того, идёт ли
+   сессия или открыт лаунчер (tauri-plugin-updater, этап 5 "Раздача коллегам"). ===== */
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.85rem;
+}
+
+.update-banner.hidden {
+  display: none;
+}
+
+.update-banner #btn-update-install,
+.update-banner #btn-update-dismiss {
+  margin-left: auto;
+}
+
 .save-prompt {
   display: flex;
   align-items: center;
@@ -345,24 +473,65 @@ textarea:focus {
   display: none;
 }
 
-/* Режимы интерфейса (ТЗ, разд. "Режимы интерфейса"): MVP — только "Чат" и "Терминал",
-   "Сплит" (оба сразу, текущее поведение по умолчанию) — следующий этап. */
-.shell[data-mode="chat"] .pane-term,
-.shell[data-mode="chat"] .pane-side,
-.shell[data-mode="chat"] #resizer {
-  display: none;
-}
-.shell[data-mode="chat"] .pane-chat {
-  flex: 1;
-  max-width: none;
+/* ===== Баннер подтверждения опасной вставки (ТЗ, разд. "Вставка команд") ===== */
+
+.paste-danger {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--surface-2);
+  border-bottom: 2px solid var(--danger);
+  font-size: 0.85rem;
+  color: var(--danger);
 }
 
+.paste-danger.hidden {
+  display: none;
+}
+
+/* ===== План (ТЗ, разд. "Контракт ответа": ```plan блок, "Состояние держит
+   приложение: план и лог блоков — у приложения"). Своя панель, видимость —
+   как у любой другой панели, через .task-panel/.pane-hidden. ===== */
+
+.pane-plan {
+  flex: 1 1 0%; /* реальное соотношение держит JS через inline flex-grow, см. main.ts */
+  min-width: 220px;
+  border-left: 1px solid var(--border-soft);
+  background: var(--surface-2);
+}
+
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.plan-list li.done {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+.plan-list li.plan-empty {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* Раскладка панелей (было три жёстких режима "Чат"/"Терминал"/"Сплит" по ТЗ — вместо
+   этого каждая из четырёх панелей (Терминал, Чат, План, Блоки) прячется/показывается
+   сама по себе кнопкой в левой панели задач, см. .task-panel ниже и main.ts. "Сплит" из
+   ТЗ получается просто как состояние "показаны все" — не отдельный режим. */
+
 /* У сессии нет активного подключения — показываем лаунчер, прячем рабочие панели
-   независимо от выбранного режима "Чат"/"Терминал". Идёт ПОСЛЕ правил режима намеренно —
-   при равной специфичности побеждает тот, что ниже по файлу, а идле-сессия должна
-   перебивать режим, а не наоборот. */
+   и саму панель задач независимо от того, что в ней включено/выключено. */
+.shell:not([data-session="active"]) .task-panel,
 .shell:not([data-session="active"]) .pane-term,
 .shell:not([data-session="active"]) .pane-chat,
+.shell:not([data-session="active"]) .pane-plan,
 .shell:not([data-session="active"]) .pane-side,
 .shell:not([data-session="active"]) #resizer {
   display: none;
@@ -371,10 +540,19 @@ textarea:focus {
   display: none;
 }
 
-/* "Терминал" у нас = терминал + чат рядом (блоки с прикреплёнными ответами агента уже
-   показывают сворачиваемый разбор под командой, а живой чат остаётся видимым для
-   самого диалога — чистый "дистанционный" режим без чата ещё предстоит спроектировать
-   отдельно, если понадобится буквально по ТЗ). Отдельной панели не прячем. */
+/* Верхний бар целиком нужен только внутри сессии (саммари хоста, "Завершить сессию",
+   "Дополнительно", статус) — пока сессии нет, всё это заменяет сам экран лаунчера. */
+.shell:not([data-session="active"]) .toolbar-connect {
+  display: none;
+}
+
+/* Общий переключатель видимости для любой из четырёх панелей — ставится/снимается
+   кнопками в .task-panel (main.ts), а не завязан на то, какая это панель.
+   !important — иначе при равной специфичности проигрывает .pane-term/.pane-chat
+   ниже по файлу, у которых свой display:flex, и скрытие тихо не срабатывает. */
+.pane-hidden {
+  display: none !important;
+}
 
 .pane {
   padding: 0.7rem 0.9rem;
@@ -402,15 +580,15 @@ textarea:focus {
 }
 
 .pane-term {
-  flex: 1 1 50%;
+  flex: 1 1 0%; /* реальное соотношение держит JS через inline flex-grow, см. main.ts */
   min-width: 240px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
 }
 
-/* Ширину задаёт JS через inline flex (см. #resizer в main.ts) — тут только дефолт
-   и нижняя граница, чтобы терминал не схлопнулся в ноль при перетаскивании. */
+/* Разделители создаются и переставляются динамически в main.ts (relayoutResizers) —
+   между каждой парой реально видимых соседних панелей, а не статично в HTML. */
 .resizer {
   width: 6px;
   flex: none;
@@ -431,7 +609,7 @@ textarea:focus {
 }
 
 .pane-chat {
-  flex: 1 1 auto;
+  flex: 1 1 0%; /* реальное соотношение держит JS через inline flex-grow, см. main.ts */
   min-width: 280px;
   background: var(--surface);
   display: flex;
@@ -575,44 +753,10 @@ textarea:focus {
 }
 
 .pane-side {
-  flex: 1;
+  flex: 1 1 0%; /* реальное соотношение держит JS через inline flex-grow, см. main.ts */
   min-width: 300px;
-  max-width: 420px;
   border-left: 1px solid var(--border-soft);
   background: var(--surface);
-  transition: flex-basis 0.15s ease;
-}
-
-.side-header {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.side-header h2 {
-  margin: 0;
-}
-
-.side-toggle {
-  padding: 0.2rem 0.4rem;
-  font-size: 0.8rem;
-  line-height: 1;
-}
-
-/* Свёрнутое состояние ("даём панели возможность свернуться в бок") — узкая полоска,
-   видна только кнопка разворота, содержимое и ширина не тратятся зря. */
-.pane-side.collapsed {
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: none;
-  width: 2.2rem;
-  padding: 0.7rem 0.4rem;
-  overflow: hidden;
-}
-
-.pane-side.collapsed .side-header h2,
-.pane-side.collapsed .blocks {
-  display: none;
 }
 
 .blocks {
@@ -632,6 +776,17 @@ textarea:focus {
 
 .block:last-child {
   border-bottom: none;
+}
+
+/* Живой снимок хоткея "глянь" на незакрытой команде — не итог, пометка тем же
+ * оттенком, что и точка статуса агента "starting" (см. .dot-starting). */
+.block-running {
+  border-left: 2px solid #e0b341;
+  padding-left: 0.4rem;
+}
+
+.block-running .meta {
+  color: #e0b341;
 }
 
 .block .cmd {

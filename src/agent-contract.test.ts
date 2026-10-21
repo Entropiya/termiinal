@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAgentResponse } from "./agent-contract";
+import { parseAgentResponse, parsePlanChecklist } from "./agent-contract";
 
 describe("parseAgentResponse", () => {
   it("SKIP распознаётся ровно", () => {
@@ -53,5 +53,31 @@ describe("parseAgentResponse", () => {
     expect(r.raw).toBe(text);
     expect(r.bashBlocks).toEqual([]);
     expect(r.plan).toBeNull();
+  });
+});
+
+describe("parsePlanChecklist", () => {
+  it("разбирает done/не-done пункты", () => {
+    expect(parsePlanChecklist("- [x] шаг1\n- [ ] шаг2")).toEqual([
+      { text: "шаг1", done: true },
+      { text: "шаг2", done: false },
+    ]);
+  });
+
+  it("терпим к [X] заглавной и отступам", () => {
+    expect(parsePlanChecklist("  - [X] готово\n-[ ] без пробела до скобки")).toEqual([
+      { text: "готово", done: true },
+      { text: "без пробела до скобки", done: false },
+    ]);
+  });
+
+  it("строки не в формате чек-листа пропускаются", () => {
+    expect(parsePlanChecklist("План на сегодня:\n- [ ] шаг1\n\nПримечание.")).toEqual([
+      { text: "шаг1", done: false },
+    ]);
+  });
+
+  it("пустой текст — пустой список", () => {
+    expect(parsePlanChecklist("")).toEqual([]);
   });
 });

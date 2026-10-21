@@ -1,0 +1,51 @@
+name: Release
+
+# Этап 5 ТЗ "Раздача коллегам" + автообновление (tauri-plugin-updater, см.
+# src-tauri/tauri.conf.json): пуш тега вида v1.2.3 собирает Windows-инсталлятор,
+# подписывает его ключом обновлений и кладёт черновик релиза на GitHub, откуда его
+# потом забирает updater (endpoint — .../releases/latest/download/latest.json).
+# Проект чисто Windows-специфичный (ConPTY, ssh.exe, MSYS2) — собираем только под
+# windows-latest, другие платформы не имеют смысла.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Приватный ключ подписи обновлений и его пароль — см. .tauri-keys/ локально
+          # (туда же CI не имеет доступа, ключ живёт только в секретах репозитория).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "terminal-mentor ${{ github.ref_name }}"
+          releaseBody: |
+            Подробности изменений — в истории коммитов.
+
+            Неподписанный exe/установщик — Windows SmartScreen покажет предупреждение
+            при первом запуске ("Подробнее" → "Выполнить в любом случае").
+          # Черновиком — чтобы можно было проверить/дополнить описание перед тем, как
+          # релиз станет видимым и его подхватит автообновление у уже установленных копий.
+          releaseDraft: true
+          prerelease: false

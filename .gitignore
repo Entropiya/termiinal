@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Приватный ключ подписи обновлений (tauri-plugin-updater) и его пароль — НИКОГДА в
+# репозиторий, даже публичный с открытым исходником. Публичный ключ — другое дело,
+# он осознанно лежит в src-tauri/tauri.conf.json.
+.tauri-keys/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

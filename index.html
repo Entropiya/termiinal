@@ -4,32 +4,26 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>terminal-mentor — этап 2</title>
+    <title>terminal-mentor</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
   <body>
+    <div id="update-banner" class="update-banner hidden">
+      <span id="update-banner-text"></span>
+      <button id="btn-update-install" class="btn-primary" type="button">Установить и перезапустить</button>
+      <button id="btn-update-dismiss" type="button">Позже</button>
+    </div>
+
     <main class="shell">
       <header class="toolbar toolbar-connect">
-        <button id="btn-mode" title="Ctrl+Shift+M — переключить режим">Режим: Терминал</button>
-        <span class="sep"></span>
-        <select id="preset-select" title="Сохранённые подключения">
-          <option value="">— новое подключение —</option>
-        </select>
-        <input id="preset-name" placeholder="имя пресета" size="9" />
-        <input id="preset-user" placeholder="пользователь" size="8" value="Pakochka" />
-        <span class="at">@</span>
-        <input id="preset-host" placeholder="хост" size="13" value="192.168.70.167" />
-        <input id="preset-port" placeholder="порт" size="4" />
-        <input id="preset-key" placeholder="путь к ключу" size="16" value="C:\Users\Pakochka\.ssh\id_ed25519" />
-        <button id="btn-ssh" class="btn-primary">Подключиться</button>
-        <button id="btn-preset-save" title="Сохранить текущие поля как пресет">Сохранить</button>
-        <button id="btn-preset-delete" disabled title="Удалить выбранный пресет">✕</button>
+        <span id="session-summary" class="session-summary"></span>
+
+        <button id="btn-ssh" class="btn-danger">Завершить сессию</button>
 
         <details class="dropdown">
           <summary>Дополнительно ▾</summary>
           <div class="dropdown-menu">
-            <button id="btn-spawn">Git Bash (локально)</button>
             <button id="btn-integrate" disabled title="Внедрить OSC-хуки для нарезки на блоки в этой сессии">
               Внедрить интеграцию вручную
             </button>
@@ -50,24 +44,50 @@
           <div class="launcher-inner">
             <h1>terminal-mentor</h1>
             <p class="launcher-hint">
-              Выбери сохранённое подключение — или заполни поля в строке выше и нажми «Подключиться».
+              Выбери сохранённое подключение — или заполни поля ниже и нажми «Подключиться».
             </p>
             <h2>Сохранённые подключения</h2>
             <ul id="launcher-list" class="launcher-list">
               <li class="launcher-empty">пока пусто — подключись один раз, предложим сохранить</li>
             </ul>
             <button id="btn-launcher-gitbash">Git Bash (локально)</button>
+
+            <div class="new-conn-section">
+              <h2 class="new-conn-heading">Новое подключение</h2>
+              <div class="conn-fields">
+                <input id="preset-name" placeholder="имя пресета" />
+                <div class="conn-row">
+                  <input id="preset-user" placeholder="пользователь" value="Pakochka" />
+                  <span class="at">@</span>
+                  <input id="preset-host" placeholder="хост" value="192.168.70.167" />
+                  <input id="preset-port" placeholder="порт" />
+                </div>
+                <div class="conn-row">
+                  <input id="preset-key" placeholder="путь к ключу" value="C:\Users\Pakochka\.ssh\id_ed25519" />
+                  <button id="btn-browse-key" type="button" title="Выбрать файл ключа в проводнике">Обзор…</button>
+                </div>
+                <div class="conn-row">
+                  <button id="btn-connect" class="btn-primary" type="button">Подключиться</button>
+                  <button id="btn-preset-save" type="button" title="Сохранить текущие поля как новый пресет">
+                    Сохранить как пресет
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
         <section class="pane pane-term" id="pane-term">
           <h2>Терминал</h2>
+          <div id="paste-danger" class="paste-danger hidden">
+            <span id="paste-danger-text"></span>
+            <button id="btn-paste-danger-yes" class="btn-danger">Вставить всё равно</button>
+            <button id="btn-paste-danger-no">Отмена</button>
+          </div>
           <div id="xterm"></div>
         </section>
 
-        <div class="resizer" id="resizer" title="Перетащи, чтобы изменить соотношение"></div>
-
-        <section class="pane pane-chat">
+        <section class="pane pane-chat" id="pane-chat">
           <div class="chat-header">
             <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">👁 Глянь</button>
             <h2>Чат с агентом</h2>
@@ -91,13 +111,22 @@
           </form>
         </section>
 
+        <section class="pane pane-plan" id="pane-plan">
+          <h2>План</h2>
+          <ul id="plan-list" class="plan-list"></ul>
+        </section>
+
         <section class="pane pane-side" id="pane-side">
-          <div class="side-header">
-            <button id="btn-side-toggle" class="side-toggle" title="Свернуть/развернуть">⟩</button>
-            <h2>Блоки</h2>
-          </div>
+          <h2>Блоки</h2>
           <div id="blocks" class="blocks"></div>
         </section>
+
+        <nav id="task-panel" class="task-panel" title="Панель задач — спрятанные панели остаются тут кнопкой">
+          <button id="dock-term" class="dock-btn">Терминал</button>
+          <button id="dock-chat" class="dock-btn">Чат</button>
+          <button id="dock-plan" class="dock-btn">План</button>
+          <button id="dock-blocks" class="dock-btn">Блоки</button>
+        </nav>
       </div>
     </main>
   </body>

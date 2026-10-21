@@ -8,11 +8,17 @@ import { buildIntegrationLine } from "./shell-integration";
 import { startAgent, type AgentHandle } from "./agent";
 import { redactSecrets } from "./redact";
 import { shouldSendBlock, formatBlocksForAgent, DEFAULT_BLACKLIST, type AgentPolicy } from "./block-agent";
-import { parseAgentResponse } from "./agent-contract";
+import { parseAgentResponse, parsePlanChecklist, type PlanItem } from "./agent-contract";
 import { renderAgentMarkdown } from "./render-markdown";
 import { loadPresets, upsertPreset, removePreset, type ConnectionPreset } from "./presets";
 import { buildProbeCommand, ProbeCapture, type ProbeResult } from "./host-probe";
+import { classifyPaste, type DangerMatch } from "./paste-guard";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
+import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import systemPrompt from "./system-prompt.md?raw";
 
 // ТЗ, разд. "Закрытие Tauri": "ссылки из ответов открываются только во внешнем браузере".
@@ -39,40 +45,179 @@ const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
 const DEFAULT_SSH_KEY = "C:\\Users\\Pakochka\\.ssh\\id_ed25519";
 
 const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
-const btnMode = document.querySelector<HTMLButtonElement>("#btn-mode")!;
 const shellEl = document.querySelector<HTMLElement>(".shell")!;
-const btnSpawn = document.querySelector<HTMLButtonElement>("#btn-spawn")!;
 const btnSsh = document.querySelector<HTMLButtonElement>("#btn-ssh")!;
-const presetSelectEl = document.querySelector<HTMLSelectElement>("#preset-select")!;
+const btnConnect = document.querySelector<HTMLButtonElement>("#btn-connect")!;
+const sessionSummaryEl = document.querySelector<HTMLSpanElement>("#session-summary")!;
 const presetNameEl = document.querySelector<HTMLInputElement>("#preset-name")!;
 const presetUserEl = document.querySelector<HTMLInputElement>("#preset-user")!;
 const presetHostEl = document.querySelector<HTMLInputElement>("#preset-host")!;
 const presetPortEl = document.querySelector<HTMLInputElement>("#preset-port")!;
 const presetKeyEl = document.querySelector<HTMLInputElement>("#preset-key")!;
 const btnPresetSave = document.querySelector<HTMLButtonElement>("#btn-preset-save")!;
-const btnPresetDelete = document.querySelector<HTMLButtonElement>("#btn-preset-delete")!;
+const btnBrowseKey = document.querySelector<HTMLButtonElement>("#btn-browse-key")!;
 const savePromptEl = document.querySelector<HTMLDivElement>("#save-prompt")!;
 const savePromptTextEl = document.querySelector<HTMLSpanElement>("#save-prompt-text")!;
 const btnSavePromptYes = document.querySelector<HTMLButtonElement>("#btn-save-prompt-yes")!;
 const btnSavePromptNo = document.querySelector<HTMLButtonElement>("#btn-save-prompt-no")!;
 const btnIntegrate = document.querySelector<HTMLButtonElement>("#btn-integrate")!;
+const planListEl = document.querySelector<HTMLUListElement>("#plan-list")!;
+const pasteDangerEl = document.querySelector<HTMLDivElement>("#paste-danger")!;
+const pasteDangerTextEl = document.querySelector<HTMLSpanElement>("#paste-danger-text")!;
+const btnPasteDangerYes = document.querySelector<HTMLButtonElement>("#btn-paste-danger-yes")!;
+const btnPasteDangerNo = document.querySelector<HTMLButtonElement>("#btn-paste-danger-no")!;
 const blocksEl = document.querySelector<HTMLDivElement>("#blocks")!;
+
+// ===== Панель задач слева: каждая из четырёх рабочих панелей (Терминал, Чат, План,
+// Блоки) прячется/показывается собственной кнопкой независимо от остальных — это
+// заменяет три жёсткие раскладки "Чат"/"Терминал"/"Сплит" из ТЗ (разд. "Режимы
+// интерфейса"): "Сплит" получается сам собой, когда показаны все панели сразу, а не
+// отдельным режимом. См. обсуждение в docs/stage3.md.
+//
+// Ключ для "side" оставлен старым (`terminal-mentor:side-collapsed`) specifically —
+// раньше это была кнопка "свернуть Блоки в бок" с той же семантикой (1 = спрятано),
+// так сохранённая у пользователя настройка не сбрасывается этим рефакторингом.
+const paneTermEl = document.querySelector<HTMLElement>("#pane-term")!;
+const paneChatEl = document.querySelector<HTMLElement>("#pane-chat")!;
+const panePlanEl = document.querySelector<HTMLElement>("#pane-plan")!;
 const paneSideEl = document.querySelector<HTMLElement>("#pane-side")!;
-const btnSideToggle = document.querySelector<HTMLButtonElement>("#btn-side-toggle")!;
 
-const SIDE_COLLAPSED_KEY = "terminal-mentor:side-collapsed";
-
-function setSideCollapsed(collapsed: boolean) {
-  paneSideEl.classList.toggle("collapsed", collapsed);
-  btnSideToggle.textContent = collapsed ? "⟨" : "⟩";
-  localStorage.setItem(SIDE_COLLAPSED_KEY, collapsed ? "1" : "0");
+interface DockPane {
+  el: HTMLElement;
+  btn: HTMLButtonElement;
+  storageKey: string;
 }
 
-btnSideToggle.addEventListener("click", () => {
-  setSideCollapsed(!paneSideEl.classList.contains("collapsed"));
+type PaneId = "term" | "chat" | "plan" | "side";
+
+const dockPanes: Record<PaneId, DockPane> = {
+  term: { el: paneTermEl, btn: document.querySelector<HTMLButtonElement>("#dock-term")!, storageKey: "terminal-mentor:term-hidden" },
+  chat: { el: paneChatEl, btn: document.querySelector<HTMLButtonElement>("#dock-chat")!, storageKey: "terminal-mentor:chat-hidden" },
+  plan: { el: panePlanEl, btn: document.querySelector<HTMLButtonElement>("#dock-plan")!, storageKey: "terminal-mentor:plan-hidden" },
+  side: { el: paneSideEl, btn: document.querySelector<HTMLButtonElement>("#dock-blocks")!, storageKey: "terminal-mentor:side-collapsed" },
+};
+
+// Порядок панелей в DOM/на экране — для расстановки разделителей между соседями.
+const PANE_ORDER: PaneId[] = ["term", "chat", "plan", "side"];
+// Нижняя граница ширины в пикселях — не даёт панели схлопнуться до нечитаемого
+// состояния при перетаскивании разделителя, независимо от flex-grow.
+const PANE_MIN_WIDTH: Record<PaneId, number> = { term: 240, chat: 280, plan: 220, side: 300 };
+
+// ===== Ширина панелей — через flex-grow, а не фиксированные пиксели, чтобы раскладка
+// подстраивалась под размер окна пропорционально (а не оставалась привязанной к старым
+// px при ресайзе окна). Если видна только одна панель — у неё нет соседей, делящих
+// flex-grow, так что она естественно занимает всю ширину без доп. кода. =====
+function paneGrowKey(id: PaneId): string {
+  return `terminal-mentor:pane-grow:${id}`;
+}
+
+function getPaneGrow(id: PaneId): number {
+  const saved = Number(localStorage.getItem(paneGrowKey(id)));
+  return saved > 0 ? saved : 1;
+}
+
+function setPaneGrow(id: PaneId, grow: number) {
+  dockPanes[id].el.style.flex = `${grow} 1 0%`;
+  localStorage.setItem(paneGrowKey(id), String(grow));
+}
+
+for (const id of PANE_ORDER) setPaneGrow(id, getPaneGrow(id));
+
+// Пул разделителей — их не больше, чем промежутков между панелями (N-1), независимо от
+// того, сколько панелей сейчас видно. relayoutResizers переставляет их между реально
+// видимыми соседями каждый раз, когда что-то прячется/показывается кнопкой в dockPanes.
+const resizerPool: HTMLDivElement[] = PANE_ORDER.slice(1).map(() => {
+  const d = document.createElement("div");
+  d.className = "resizer";
+  d.title = "Перетащи, чтобы изменить соотношение";
+  return d;
 });
 
-setSideCollapsed(localStorage.getItem(SIDE_COLLAPSED_KEY) === "1");
+function relayoutResizers() {
+  const visible = PANE_ORDER.filter((id) => !dockPanes[id].el.classList.contains("pane-hidden"));
+  resizerPool.forEach((r) => r.remove());
+  for (let i = 0; i < visible.length - 1; i++) {
+    const r = resizerPool[i];
+    r.dataset.left = visible[i];
+    r.dataset.right = visible[i + 1];
+    dockPanes[visible[i]].el.after(r);
+  }
+}
+
+interface ResizeState {
+  el: HTMLDivElement;
+  left: PaneId;
+  right: PaneId;
+  combinedGrow: number;
+  totalPx: number;
+  leftEdgePx: number;
+}
+let resizing: ResizeState | null = null;
+
+for (const r of resizerPool) {
+  r.addEventListener("mousedown", (e) => {
+    const left = r.dataset.left as PaneId;
+    const right = r.dataset.right as PaneId;
+    const leftRect = dockPanes[left].el.getBoundingClientRect();
+    const rightRect = dockPanes[right].el.getBoundingClientRect();
+    resizing = {
+      el: r,
+      left,
+      right,
+      combinedGrow: getPaneGrow(left) + getPaneGrow(right),
+      totalPx: leftRect.width + rightRect.width,
+      leftEdgePx: leftRect.left,
+    };
+    r.classList.add("dragging");
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+}
+
+window.addEventListener("mousemove", (e) => {
+  if (!resizing) return;
+  const { left, right, combinedGrow, totalPx, leftEdgePx } = resizing;
+  // Перераспределяем ТОЛЬКО между left/right, их сумма flex-grow не меняется — поэтому
+  // ширина остальных (не участвующих в этом перетаскивании) панелей не дёргается.
+  const widthLeft = Math.max(
+    PANE_MIN_WIDTH[left],
+    Math.min(totalPx - PANE_MIN_WIDTH[right], e.clientX - leftEdgePx),
+  );
+  const fracLeft = widthLeft / totalPx;
+  setPaneGrow(left, combinedGrow * fracLeft);
+  setPaneGrow(right, combinedGrow * (1 - fracLeft));
+  if (left === "term" || right === "term") syncTermSize();
+});
+
+window.addEventListener("mouseup", () => {
+  if (!resizing) return;
+  resizing.el.classList.remove("dragging");
+  document.body.style.userSelect = "";
+  resizing = null;
+});
+
+function setPaneHidden(id: PaneId, hidden: boolean) {
+  const p = dockPanes[id];
+  p.el.classList.toggle("pane-hidden", hidden);
+  p.btn.classList.toggle("active", !hidden);
+  localStorage.setItem(p.storageKey, hidden ? "1" : "0");
+  relayoutResizers();
+  // xterm/fitAddon не умеют посчитать размер, пока контейнер display:none — досчитываем
+  // его, когда терминал возвращается на экран (см. syncTermSize ниже).
+  if (id === "term" && !hidden) requestAnimationFrame(syncTermSize);
+}
+
+// По умолчанию (пока пользователь ничего сам не прятал/не показывал) открыт только
+// терминал — остальные три панели включаются по запросу кнопкой в панели задач.
+// Как только в localStorage появляется явное значение, оно главнее этого дефолта.
+const PANE_DEFAULT_HIDDEN: Record<PaneId, boolean> = { term: false, chat: true, plan: true, side: true };
+
+for (const id of PANE_ORDER) {
+  const p = dockPanes[id];
+  p.btn.addEventListener("click", () => setPaneHidden(id, !p.el.classList.contains("pane-hidden")));
+  const stored = localStorage.getItem(p.storageKey);
+  setPaneHidden(id, stored !== null ? stored === "1" : PANE_DEFAULT_HIDDEN[id]);
+}
 
 const agentPolicyEl = document.querySelector<HTMLSelectElement>("#agent-policy")!;
 const btnGlance = document.querySelector<HTMLButtonElement>("#btn-glance")!;
@@ -130,41 +275,64 @@ term.attachCustomKeyEventHandler((event) => {
     toggleAddressTarget();
     return false;
   }
-  if (event.type === "keydown" && event.ctrlKey && event.shiftKey && event.code === "KeyM") {
-    cycleUiMode();
-    return false;
-  }
   return true;
 });
 
-// ===== Режимы интерфейса (ТЗ, разд. "Режимы интерфейса") — MVP: только "Чат" и
-// "Терминал", без "Сплита" (это следующий этап); Ctrl+Shift+M переключает по кругу. =====
-type UiMode = "terminal" | "chat";
-let uiMode: UiMode = "terminal";
-const MODE_LABELS: Record<UiMode, string> = { terminal: "Терминал", chat: "Чат" };
+// ===== Защита от опасных команд при вставке (ТЗ, разд. "Вставка команд") =====
+// Перехватываем 'paste' на контейнере #xterm в фазе capture — это раньше, чем внутренний
+// обработчик xterm.js на его скрытой textarea (у него — bubble-фаза), поэтому
+// preventDefault()+stopPropagation() здесь гарантированно не дают xterm вставить текст
+// мимо проверки.
+//
+// Не сделано из этого раздела ТЗ: ограничение многострочной вставки до одной строки в
+// шеллах без bracketed paste (ash/dash) — у проекта пока нет отслеживания "сейчас bash
+// или ash/dash" (см. docs/stage2.md). Многострочная вставка всегда уходит как есть, с
+// оборачиванием в bracketed paste, если шелл его включил.
+let pendingPasteText: string | null = null;
 
-function setUiMode(mode: UiMode) {
-  uiMode = mode;
-  shellEl.dataset.mode = mode;
-  btnMode.textContent = `Режим: ${MODE_LABELS[mode]}`;
+function forwardPasteToPty(text: string) {
+  if (!pty) return;
+  const wrapped = term.modes.bracketedPasteMode ? `\x1b[200~${text}\x1b[201~` : text;
+  pty.write(wrapped);
 }
 
-function cycleUiMode() {
-  setUiMode(uiMode === "terminal" ? "chat" : "terminal");
+function showPasteDangerPrompt(matches: DangerMatch[]) {
+  pasteDangerTextEl.innerHTML =
+    "⚠ В буфере — потенциально опасная команда:<br>" +
+    Array.from(new Set(matches.map((m) => `${m.group}: ${m.label}`)))
+      .map(escapeHtml)
+      .join("<br>");
+  pasteDangerEl.classList.remove("hidden");
 }
 
-btnMode.addEventListener("click", cycleUiMode);
-setUiMode(uiMode);
+function hidePasteDangerPrompt() {
+  pendingPasteText = null;
+  pasteDangerEl.classList.add("hidden");
+}
 
-// Ctrl+Shift+M должен работать и когда фокус в чате (textarea), не только в терминале.
-window.addEventListener("keydown", (e) => {
-  if (!(e.ctrlKey && e.shiftKey && e.code === "KeyM")) return;
-  // Фокус внутри xterm уже обработан через attachCustomKeyEventHandler выше —
-  // пропускаем здесь, иначе сработает дважды подряд.
-  if (document.getElementById("xterm")?.contains(document.activeElement)) return;
-  e.preventDefault();
-  cycleUiMode();
+btnPasteDangerYes.addEventListener("click", () => {
+  if (pendingPasteText !== null) forwardPasteToPty(pendingPasteText);
+  hidePasteDangerPrompt();
 });
+btnPasteDangerNo.addEventListener("click", hidePasteDangerPrompt);
+
+document.querySelector<HTMLDivElement>("#xterm")!.addEventListener(
+  "paste",
+  (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = e.clipboardData?.getData("text/plain");
+    if (!text) return;
+    const matches = classifyPaste(text);
+    if (matches.length === 0) {
+      forwardPasteToPty(text);
+    } else {
+      pendingPasteText = text;
+      showPasteDangerPrompt(matches);
+    }
+  },
+  { capture: true },
+);
 
 let pty: (PtyHandle & { dispose(): void }) | null = null;
 let blockBuilder: BlockBuilder | null = null;
@@ -178,6 +346,25 @@ let pendingKind: "chat" | "blocks" | null = null;
 let pendingBlocksCount = 0;
 let pendingBatch: Block[] = [];
 let lastClosedBlock: Block | null = null;
+
+// ===== План (ТЗ: "Состояние держит приложение. План и лог блоков — у приложения,
+// сессия агента — расходник"). Живёт только в памяти текущего запуска приложения —
+// переживание перезапуска и экспорт это отдельный пункт этапа 3 (хранение сессий,
+// см. docs/stage3.md), пока не сделан. Агент присылает ПОЛНЫЙ снимок плана в каждом
+// ```plan блоке (ТЗ: "Обновление плана"), поэтому просто заменяем целиком, без диффа. =====
+let currentPlan: PlanItem[] = [];
+
+function renderPlan() {
+  // Видимость самой панели плана теперь не зависит от того, есть ли план — это
+  // решает кнопка в панели задач (см. dockPanes выше). Если плана ещё нет, просто
+  // показываем заглушку вместо пустого списка.
+  planListEl.innerHTML = currentPlan.length
+    ? currentPlan
+        .map((item) => `<li class="${item.done ? "done" : ""}">${item.done ? "☑" : "☐"} ${escapeHtml(item.text)}</li>`)
+        .join("")
+    : `<li class="plan-empty">План пока не составлен.</li>`;
+}
+renderPlan();
 let currentSessionLabel: string | null = null;
 let sessionOsInfo: { osId: string | null; osVersionId: string | null } | null = null;
 let probeCapture: ProbeCapture | null = null;
@@ -297,9 +484,9 @@ function handleProbeResult(r: ProbeResult | null) {
   // текста промпта (как того просит ТЗ для автовключения) у нас пока нет. Саму отправку
   // см. в scheduleProbeTrailingEnd — тут только ставим флаг, см. комментарий там.
   if (r.hostname) pendingAutoIntegration = true;
-  // Подключение заработало по-настоящему (проба прошла) — если это было НЕ из сохранённого
-  // пресета (поле выбора пустое — "новое подключение"), самое время предложить сохранить.
-  if (r.hostname && presetSelectEl.value === "") showSavePrompt();
+  // Подключение заработало по-настоящему (проба прошла) — если это было НЕ из уже
+  // сохранённого пресета, самое время предложить сохранить (см. connectedFromSavedPreset).
+  if (r.hostname && !connectedFromSavedPreset) showSavePrompt();
 }
 
 function showSavePrompt() {
@@ -316,7 +503,6 @@ btnSavePromptYes.addEventListener("click", () => {
   const preset = currentFieldsAsPreset(id);
   if (preset.user && preset.host) {
     upsertPreset(preset);
-    refreshPresetSelect(id);
     renderLauncherList();
   }
   hideSavePrompt();
@@ -337,11 +523,29 @@ agentPolicyEl.addEventListener("change", () => {
   agentPolicy = agentPolicyEl.value as AgentPolicy;
 });
 
-// Хоткей "глянь" (ТЗ: один на всё) — пока только случай "на закрытом блоке": форсирует
-// отправку последнего блока в обход политики/чёрного списка. Случай "на незавершённом
-// блоке -> снимок текущего экрана" — отдельная фича, требует доступа к живому буферу
-// xterm.js посреди выполнения команды, сделаем отдельным шагом.
+// Хоткей "глянь" (ТЗ: один на всё). Два случая:
+// - команда сейчас выполняется -> живой текстовый снимок последних 60 строк из
+//   headless-буфера (peekRunningBlock), а не скриншот экрана: тот же путь, что у
+//   закрытых блоков (затирание секретов, контракт ответа), без скриншотов и доступа
+//   к экрану — см. обсуждение в docs/stage2.md.
+// - иначе — форсирует отправку последнего ЗАКРЫТОГО блока в обход политики/списка.
+const PEEK_MAX_LINES = 60; // тот же порог, что открытый вопрос в tz.md про обрезку вывода
+
 btnGlance.addEventListener("click", () => {
+  const running = blockBuilder?.peekRunningBlock(PEEK_MAX_LINES);
+  if (running) {
+    // Синтетический отрицательный id: это одноразовый снимок, а не настоящий блок
+    // из нарезки — не должен занимать номер из blockBuilder.blockSeq (команда ещё
+    // выполняется и позже честно закроется своим обычным блоком с обычным id).
+    const block: Block = { id: -Date.now(), ...running };
+    renderBlock(block);
+    pendingBlockQueue.push(block);
+    if (agentBusy) {
+      addChatMessage("system", "«Глянь»: агент занят, снимок встал в очередь.");
+    }
+    trySendPending();
+    return;
+  }
   if (!lastClosedBlock) {
     // Раньше молча ничего не делала — самая вероятная причина "не работает":
     // блоков ещё нет (интеграция не внедрена или ни одна команда не завершилась).
@@ -359,10 +563,11 @@ const blockElements = new Map<number, HTMLDivElement>();
 
 function renderBlock(b: Block) {
   const div = document.createElement("div");
-  div.className = "block";
+  div.className = b.running ? "block block-running" : "block";
+  const status = b.running ? "выполняется… (снимок, не итог)" : `exit=${b.exitCode ?? "?"}`;
   div.innerHTML = `
     <div class="cmd">${escapeHtml(b.cmd ?? "(нет текста команды)")}</div>
-    <div class="meta">exit=${b.exitCode ?? "?"} cwd=${escapeHtml(b.cwd ?? "?")} строки ${b.startRow}–${b.endRow}</div>
+    <div class="meta">${status} cwd=${escapeHtml(b.cwd ?? "?")} строки ${b.startRow}–${b.endRow}</div>
     <pre>${escapeHtml(b.output)}</pre>
   `;
   blocksEl.prepend(div);
@@ -481,6 +686,12 @@ async function spawnShell(
     onExit: (code) => {
       statusEl.textContent = `${label}: процесс завершён (код ${code ?? "?"})`;
       setSessionActive(false);
+      // После реального отключения форма "Новое подключение" должна начинаться с
+      // нуля, а не с полей только что завершённой сессии — иначе выглядит как
+      // "предзаполнение предыдущей". Не трогаем это в setSessionActive() саму —
+      // туда же ведёт и самый первый вызов при старте приложения, когда поля должны
+      // остаться с их обычными дефолтами, а не обнуляться.
+      clearPresetFields();
       pty = null;
       currentSessionLabel = null;
       sessionOsInfo = null;
@@ -514,17 +725,45 @@ async function spawnShell(
 
 // Отдельная кнопка "Завершить сессию" не нужна, пока сессии нет — "Подключиться"
 // сама становится "Завершить сессию", пока она активна (см. btnSsh ниже).
+// Размеры окна для "менеджера подключений" (нет сессии) и для рабочей сессии — см.
+// setSessionActive ниже. Совпадают со стартовыми размерами из tauri.conf.json (там —
+// размер самого первого окна при запуске, тут — то, во что/из чего прыгаем при смене
+// состояния внутри уже запущенного процесса).
+const LAUNCHER_WINDOW_SIZE = new LogicalSize(460, 640);
+const SESSION_WINDOW_SIZE = new LogicalSize(1280, 860);
+
 function setSessionActive(active: boolean) {
   btnIntegrate.disabled = !active;
-  btnSpawn.disabled = active;
-  btnSsh.textContent = active ? "Завершить сессию" : "Подключиться";
-  btnSsh.classList.toggle("btn-primary", !active);
-  btnSsh.classList.toggle("btn-danger", active);
   shellEl.dataset.session = active ? "active" : "idle";
-  if (!active) hideSavePrompt();
+  sessionSummaryEl.textContent = active ? currentSessionLabel ?? "" : "";
+  if (!active) {
+    hideSavePrompt();
+    hidePasteDangerPrompt();
+  }
+  // Пока сессии нет — маленькое несворачиваемое окно "менеджера подключений" (а-ля
+  // PuTTY: список пресетов + новое подключение). Как только сессия реально поднялась,
+  // окно разворачивается в рабочий размер и становится обычным resizable-окном; при
+  // завершении сессии (кнопкой или сам процесс вышел, см. onExit в spawnShell) —
+  // сжимается обратно. Это одно и то же окно ОС, не два разных — плавнее, чем закрывать
+  // одно окно и открывать другое, и работает одинаково для первого и для повторного
+  // подключения в одном запуске приложения.
+  const win = getCurrentWindow();
+  win.setResizable(active).catch((err) => console.warn("[window] setResizable", err));
+  win
+    .setSize(active ? SESSION_WINDOW_SIZE : LAUNCHER_WINDOW_SIZE)
+    .then(() => win.center())
+    .catch((err) => console.warn("[window] setSize/center", err));
+  win
+    .setTitle(active && currentSessionLabel ? `${currentSessionLabel} — terminal-mentor` : "terminal-mentor")
+    .catch((err) => console.warn("[window] setTitle", err));
 }
 
-btnSpawn.addEventListener("click", () => {
+// Раньше была ещё отдельная кнопка "Git Bash (локально)" в "Дополнительно" — убрали:
+// она дублировала эту же кнопку из лаунчера (#btn-launcher-gitbash ниже) и всегда была
+// disabled, пока сессия активна (а "Дополнительно" теперь и так показывается только
+// внутри активной сессии — см. .toolbar-connect в styles.css), то есть толку от неё
+// не было в принципе.
+function spawnGitBash() {
   spawnShell("Git Bash", GIT_BASH, ["--login", "-i"], {
     // MSYS-рантайм git-bash по умолчанию не знает про ConPTY и ведёт себя так, будто
     // его вывод никуда не подключён как терминал — отсюда битые Tab/история/стрелки.
@@ -532,24 +771,30 @@ btnSpawn.addEventListener("click", () => {
     // (тот же трюк использует Windows Terminal для профиля Git Bash).
     MSYS: "enable_pcon",
     MSYS2_PTY: "1",
+    // Без этого MSYS2 сама подставляет LANG под язык интерфейса Windows (у нас — ru-RU),
+    // когда переменная не задана — вот откуда были русские сообщения coreutils/bash,
+    // хотя никто их явно не просил. C.UTF-8 — нейтральный дефолт (как обычно "из
+    // коробки" у самого инструмента), не привязанный к языку конкретной машины.
+    LANG: "C.UTF-8",
+    LC_ALL: "C.UTF-8",
   }).catch((err) => {
     statusEl.textContent = `ошибка запуска: ${err}`;
   });
-});
+}
 
 // ===== Пресеты подключений (ТЗ: "Подключения и пресеты") =====
+// Раньше тут был <select> со списком пресетов, который подставлял их значения в эти
+// же поля для просмотра/редактирования — убрали по просьбе пользователя: форма теперь
+// ВСЕГДА про новое подключение, без скрытого состояния "а вдруг это открытый пресет".
+// Открыть сохранённый пресет — это клик по нему в списке лаунчера (сразу подключает,
+// см. renderLauncherList ниже); удалить его — крестик у той же строки списка.
 
-function refreshPresetSelect(selectId = "") {
-  const presets = loadPresets();
-  presetSelectEl.innerHTML = '<option value="">— новое подключение —</option>';
-  for (const p of presets) {
-    const opt = document.createElement("option");
-    opt.value = p.id;
-    opt.textContent = p.name;
-    presetSelectEl.appendChild(opt);
-  }
-  presetSelectEl.value = selectId;
-  btnPresetDelete.disabled = !selectId;
+function clearPresetFields() {
+  presetNameEl.value = "";
+  presetUserEl.value = "";
+  presetHostEl.value = "";
+  presetPortEl.value = "";
+  presetKeyEl.value = DEFAULT_SSH_KEY;
 }
 
 function currentFieldsAsPreset(id: string): ConnectionPreset {
@@ -563,54 +808,30 @@ function currentFieldsAsPreset(id: string): ConnectionPreset {
   };
 }
 
-function clearPresetFields() {
-  presetNameEl.value = "";
-  presetUserEl.value = "";
-  presetHostEl.value = "";
-  presetPortEl.value = "";
-  presetKeyEl.value = DEFAULT_SSH_KEY;
-}
-
-presetSelectEl.addEventListener("change", () => {
-  const id = presetSelectEl.value;
-  btnPresetDelete.disabled = !id;
-  if (!id) {
-    clearPresetFields(); // иначе в полях остаются значения ранее выбранного пресета
-    return;
-  }
-  const p = loadPresets().find((x) => x.id === id);
-  if (!p) return;
-  presetNameEl.value = p.name;
-  presetUserEl.value = p.user;
-  presetHostEl.value = p.host;
-  presetPortEl.value = p.port ? String(p.port) : "";
-  presetKeyEl.value = p.keyPath ?? DEFAULT_SSH_KEY;
-});
-
 btnPresetSave.addEventListener("click", () => {
-  const id = presetSelectEl.value || crypto.randomUUID();
-  const preset = currentFieldsAsPreset(id);
+  const preset = currentFieldsAsPreset(crypto.randomUUID());
   if (!preset.user || !preset.host) {
     statusEl.textContent = "для пресета нужны хотя бы пользователь и хост";
     return;
   }
   upsertPreset(preset);
-  refreshPresetSelect(id);
   renderLauncherList();
 });
 
-btnPresetDelete.addEventListener("click", () => {
-  const id = presetSelectEl.value;
-  if (!id) return;
-  removePreset(id);
-  refreshPresetSelect("");
-  // Поля должны реально опустеть, а не остаться с данными только что удалённого
-  // пресета — иначе визуально выглядит так, будто удаление не сработало.
-  clearPresetFields();
-  renderLauncherList();
+btnBrowseKey.addEventListener("click", async () => {
+  const path = await openFileDialog({ title: "Файл ключа SSH", multiple: false, directory: false }).catch(
+    (err) => {
+      console.warn("[dialog] open", err);
+      return null;
+    },
+  );
+  if (typeof path === "string") presetKeyEl.value = path;
 });
 
-refreshPresetSelect();
+// Подключились кликом по уже сохранённому пресету в списке лаунчера, а не через форму
+// нового подключения — не предлагаем banner'ом "сохранить?" то, что уже сохранено
+// (см. handleProbeResult/showSavePrompt выше).
+let connectedFromSavedPreset = false;
 
 function connectSsh() {
   const user = presetUserEl.value.trim();
@@ -632,16 +853,19 @@ function connectSsh() {
   });
 }
 
-btnSsh.addEventListener("click", () => {
-  if (pty) {
-    pty.kill().catch((err) => {
-      statusEl.textContent = `ошибка завершения: ${err}`;
-    });
-    // UI полностью сбросится по событию pty-exit (onExit выше), killer только просит
-    // процесс завершиться — ждём подтверждения от wait-потока в Rust.
-    return;
-  }
+btnConnect.addEventListener("click", () => {
+  connectedFromSavedPreset = false;
   connectSsh();
+});
+
+// btn-ssh виден только внутри активной сессии (см. .toolbar-connect в styles.css) —
+// у него одна роль, завершить её, а не переключаться между "подключиться"/"завершить".
+btnSsh.addEventListener("click", () => {
+  pty?.kill().catch((err) => {
+    statusEl.textContent = `ошибка завершения: ${err}`;
+  });
+  // UI полностью сбросится по событию pty-exit (onExit выше), killer только просит
+  // процесс завершиться — ждём подтверждения от wait-потока в Rust.
 });
 
 // ===== Стартовый экран (а-ля PuTTY) =====
@@ -673,21 +897,23 @@ function renderLauncherList() {
     del.addEventListener("click", (e) => {
       e.stopPropagation();
       removePreset(p.id);
-      refreshPresetSelect("");
-      clearPresetFields();
       renderLauncherList();
     });
     li.appendChild(del);
     li.addEventListener("click", () => {
-      refreshPresetSelect(p.id);
-      presetSelectEl.dispatchEvent(new Event("change"));
+      presetNameEl.value = p.name;
+      presetUserEl.value = p.user;
+      presetHostEl.value = p.host;
+      presetPortEl.value = p.port ? String(p.port) : "";
+      presetKeyEl.value = p.keyPath ?? DEFAULT_SSH_KEY;
+      connectedFromSavedPreset = true;
       connectSsh();
     });
     launcherListEl.appendChild(li);
   }
 }
 
-btnLauncherGitBash.addEventListener("click", () => btnSpawn.click());
+btnLauncherGitBash.addEventListener("click", spawnGitBash);
 
 renderLauncherList();
 setSessionActive(false);
@@ -704,40 +930,8 @@ function syncTermSize() {
 
 window.addEventListener("resize", syncTermSize);
 
-// ===== Перетаскиваемая граница терминал/чат =====
-const paneTermEl = document.querySelector<HTMLElement>("#pane-term")!;
-const resizerEl = document.querySelector<HTMLDivElement>("#resizer")!;
-const TERM_WIDTH_KEY = "terminal-mentor:term-width-px";
-
-const savedTermWidth = localStorage.getItem(TERM_WIDTH_KEY);
-if (savedTermWidth) {
-  paneTermEl.style.flex = `0 0 ${savedTermWidth}px`;
-  requestAnimationFrame(syncTermSize);
-}
-
-let resizingPanes = false;
-resizerEl.addEventListener("mousedown", (e) => {
-  resizingPanes = true;
-  resizerEl.classList.add("dragging");
-  document.body.style.userSelect = "none";
-  e.preventDefault();
-});
-window.addEventListener("mousemove", (e) => {
-  if (!resizingPanes) return;
-  const panesRect = paneTermEl.parentElement!.getBoundingClientRect();
-  const minWidth = 240;
-  const maxWidth = panesRect.width - 280 - 6; // место под чат + сам разделитель
-  const width = Math.max(minWidth, Math.min(maxWidth, e.clientX - panesRect.left));
-  paneTermEl.style.flex = `0 0 ${width}px`;
-  syncTermSize();
-});
-window.addEventListener("mouseup", () => {
-  if (!resizingPanes) return;
-  resizingPanes = false;
-  resizerEl.classList.remove("dragging");
-  document.body.style.userSelect = "";
-  localStorage.setItem(TERM_WIDTH_KEY, String(Math.round(paneTermEl.getBoundingClientRect().width)));
-});
+// Ширина панелей (flex-grow) и разделители между ними — см. dockPanes/setPaneGrow/
+// relayoutResizers выше, рядом с панелью задач.
 
 // ===== Агент (Claude) =====
 
@@ -836,6 +1030,10 @@ async function startAgentSession() {
             streamingDiv = null;
           }
           const parsed = parseAgentResponse(text);
+          if (parsed.plan !== null) {
+            currentPlan = parsePlanChecklist(parsed.plan);
+            renderPlan();
+          }
           const wasBlocks = pendingKind === "blocks";
           if (parsed.isSkip) {
             addChatMessage(
@@ -924,3 +1122,54 @@ chatInputEl.addEventListener("keydown", (e) => {
     toggleAddressTarget();
   }
 });
+
+// ===== Проверка обновлений (ТЗ, этап 5 "Раздача коллегам") =====
+// tauri-plugin-updater — проверяет https://github.com/.../releases/latest/download/
+// latest.json (см. src-tauri/tauri.conf.json), который заливает CI при релизе (см.
+// .github/workflows/release.yml). Баннер поверх всего — независимо от того, идёт
+// сессия или открыт лаунчер, обновление может понадобиться в любом из состояний.
+const updateBannerEl = document.querySelector<HTMLDivElement>("#update-banner")!;
+const updateBannerTextEl = document.querySelector<HTMLSpanElement>("#update-banner-text")!;
+const btnUpdateInstall = document.querySelector<HTMLButtonElement>("#btn-update-install")!;
+const btnUpdateDismiss = document.querySelector<HTMLButtonElement>("#btn-update-dismiss")!;
+
+let pendingUpdate: Awaited<ReturnType<typeof checkForUpdate>> | null = null;
+
+async function checkForUpdatesOnce() {
+  let update: Awaited<ReturnType<typeof checkForUpdate>>;
+  try {
+    update = await checkForUpdate();
+  } catch (err) {
+    console.warn("[updater] check", err);
+    return;
+  }
+  if (!update) return;
+  pendingUpdate = update;
+  updateBannerTextEl.textContent = `Доступно обновление ${update.version} (сейчас ${update.currentVersion}).`;
+  updateBannerEl.classList.remove("hidden");
+}
+
+btnUpdateInstall.addEventListener("click", async () => {
+  if (!pendingUpdate) return;
+  btnUpdateInstall.disabled = true;
+  btnUpdateInstall.textContent = "Скачивание…";
+  try {
+    // downloadAndInstall долго (скачивание + запуск инсталлятора) — в сессии при этом
+    // может идти работа, поэтому не блокируем остальной интерфейс, только эту кнопку.
+    await pendingUpdate.downloadAndInstall();
+    await relaunch();
+  } catch (err) {
+    console.warn("[updater] install", err);
+    btnUpdateInstall.disabled = false;
+    btnUpdateInstall.textContent = "Установить и перезапустить";
+    updateBannerTextEl.textContent = `Не удалось установить обновление: ${err}`;
+  }
+});
+
+btnUpdateDismiss.addEventListener("click", () => {
+  updateBannerEl.classList.add("hidden");
+});
+
+// Один раз при старте — приложение обычно запускают заново, а не держат сутками, так
+// что периодический повтор-опрос пока избыточен (можно добавить позже при необходимости).
+checkForUpdatesOnce();

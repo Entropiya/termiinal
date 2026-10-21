@@ -13,6 +13,10 @@ export interface Block {
   output: string;
   startRow: number;
   endRow: number | null;
+  /** true только для живого снимка хоткея "глянь" (см. peekRunningBlock) — команда
+   * ещё выполняется, вывод может быть обрезан и не окончателен. Обычные закрытые
+   * блоки это поле не ставят (undefined === false). */
+  running?: boolean;
 }
 
 export interface OscLogEntry {
@@ -88,9 +92,12 @@ export class BlockBuilder {
     return buf.baseY + buf.cursorY;
   }
 
-  /** Вызывать на каждый пришедший чанк байт, синхронно с записью в видимый терминал. */
-  feed(bytes: Uint8Array) {
-    this.headless.write(bytes);
+  /** Вызывать на каждый пришедший чанк байт, синхронно с записью в видимый терминал.
+   * callback (нужен только тестам) вызывается, когда headless-терминал реально
+   * разобрал этот чанк — у @xterm/headless write() всегда асинхронный внутри
+   * (планируется через setTimeout), несмотря на синхронную на вид сигнатуру. */
+  feed(bytes: Uint8Array, callback?: () => void) {
+    this.headless.write(bytes, callback);
   }
 
   resize(cols: number, rows: number) {
@@ -117,6 +124,29 @@ export class BlockBuilder {
     this.onBlockClosed?.(block);
     this.pendingCmd = null;
     this.execStartRow = null;
+  }
+
+  /** Снимок ещё НЕ закрытого блока для хоткея "глянь" (ТЗ: случай "на незавершённом
+   * блоке -> снимок текущего экрана"). Берёт всё, что уже напечатано между OSC 133 C
+   * и текущим положением курсора, не дожидаясь D — команда может идти долго (apt,
+   * docker pull). Возвращает последние maxLines строк, а не всё (тот же порог, что
+   * у закрытых блоков, см. открытый вопрос в tz.md), чтобы снимок был предсказуемого
+   * размера. null, если сейчас не выполняется команда (мы на промпте). */
+  peekRunningBlock(maxLines: number): Omit<Block, "id"> | null {
+    if (this.execStartRow === null) return null;
+    const endRow = this.absCursorRow();
+    const full = this.readRows(this.execStartRow, endRow);
+    const lines = full.split("\n");
+    const output = lines.length > maxLines ? lines.slice(lines.length - maxLines).join("\n") : full;
+    return {
+      cmd: this.pendingCmd,
+      cwd: this.pendingCwd,
+      exitCode: null,
+      output,
+      startRow: this.execStartRow,
+      endRow,
+      running: true,
+    };
   }
 
   /** Склеивает строки буфера [fromAbs, toAbs) обратно в логические, учитывая isWrapped. */

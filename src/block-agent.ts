@@ -28,5 +28,8 @@ export function formatBlocksForAgent(blocks: Block[]): string {
 }
 
 function formatOneBlock(b: Block): string {
-  return `[БЛОК] cwd=${b.cwd ?? "?"} exit=${b.exitCode ?? "?"}\n$ ${b.cmd ?? "(нет текста команды)"}\n${b.output}`;
+  // running: команда ещё выполняется, exitCode всегда null и ничего не значит —
+  // не подставляем "exit=?", чтобы агент не принял снимок за завершённый результат.
+  const status = b.running ? "ВЫПОЛНЯЕТСЯ — живой снимок, не итог, вывод может быть обрезан" : `exit=${b.exitCode ?? "?"}`;
+  return `[БЛОК] cwd=${b.cwd ?? "?"} ${status}\n$ ${b.cmd ?? "(нет текста команды)"}\n${b.output}`;
 }

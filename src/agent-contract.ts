@@ -17,6 +17,11 @@ export interface ParsedAgentResponse {
   raw: string;
 }
 
+export interface PlanItem {
+  text: string;
+  done: boolean;
+}
+
 const FENCE_RE = /```([A-Za-z]*)\n([\s\S]*?)```/g;
 const BASH_LANGS = new Set(["bash", "sh", "shell", ""]);
 
@@ -48,4 +53,19 @@ export function parseAgentResponse(text: string): ParsedAgentResponse {
     mermaidBlocks,
     raw: text,
   };
+}
+
+const PLAN_ITEM_RE = /^\s*-\s*\[([ xX])\]\s*(.+)$/;
+
+/** Разбирает чек-лист из ```plan блока (ТЗ: `- [ ]` / `- [x]`) в структурированный
+ * список. Строки, не похожие на пункт чек-листа, пропускаются — терпимый парсер, как
+ * и весь контракт ответа: агент может добавить вступление или сноску внутри блока. */
+export function parsePlanChecklist(markdown: string): PlanItem[] {
+  const items: PlanItem[] = [];
+  for (const line of markdown.split("\n")) {
+    const m = PLAN_ITEM_RE.exec(line);
+    if (!m) continue;
+    items.push({ text: m[2].trim(), done: m[1].toLowerCase() === "x" });
+  }
+  return items;
 }

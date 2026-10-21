@@ -13,9 +13,11 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "terminal-mentor — этап 1: прототип рисков",
-        "width": 1280,
-        "height": 860
+        "title": "terminal-mentor",
+        "width": 460,
+        "height": 640,
+        "resizable": false,
+        "center": true
       }
     ],
     "security": {
@@ -25,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -32,5 +35,17 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgyNzEzNjFBNDlFOUI0NTUKUldSVnRPbEpHalp4Z2hFK3IzQ1JRYVUzMGtHUnptaWgzT3JwWUk0dFRROE5TQ3VVT3lMMUZIcysK",
+      "endpoints": [
+        "https://github.com/Pakochka/termiinal/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -52,4 +52,13 @@ describe("formatBlocksForAgent", () => {
       "[БЛОК] cwd=? exit=0\n$ a\n\n\n[БЛОК] cwd=? exit=0\n$ b\n",
     );
   });
+
+  it("живой снимок (running) не пишет exit= — агент не должен принять его за итог", () => {
+    const text = formatBlocksForAgent([
+      block({ cmd: "apt update", exitCode: null, running: true, output: "Hit:1 ..." }),
+    ]);
+    expect(text).not.toContain("exit=");
+    expect(text).toContain("ВЫПОЛНЯЕТСЯ");
+    expect(text).toContain("Hit:1 ...");
+  });
 });
