@@ -1151,6 +1151,33 @@ chatInputEl.addEventListener("keydown", (e) => {
   }
 });
 
+// ===== Настройки (шестерёнка в углу + то же меню в "Дополнительно" внутри сессии) =====
+// Одно общее окошко на оба входа — задел места под будущие настройки, не только
+// автообновление (см. обсуждение в чате с пользователем).
+const btnSettingsGear = document.querySelector<HTMLButtonElement>("#btn-settings-gear")!;
+const btnOpenSettingsMenu = document.querySelector<HTMLButtonElement>("#btn-open-settings-menu")!;
+const btnSettingsClose = document.querySelector<HTMLButtonElement>("#btn-settings-close")!;
+const settingsModalEl = document.querySelector<HTMLDivElement>("#settings-modal")!;
+
+function openSettingsModal() {
+  settingsModalEl.classList.remove("hidden");
+}
+
+function closeSettingsModal() {
+  settingsModalEl.classList.add("hidden");
+}
+
+btnSettingsGear.addEventListener("click", openSettingsModal);
+btnOpenSettingsMenu.addEventListener("click", openSettingsModal);
+btnSettingsClose.addEventListener("click", closeSettingsModal);
+// Клик по тёмной подложке (не по самому окошку) — тоже закрывает, обычное поведение модалок.
+settingsModalEl.addEventListener("click", (e) => {
+  if (e.target === settingsModalEl) closeSettingsModal();
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !settingsModalEl.classList.contains("hidden")) closeSettingsModal();
+});
+
 // ===== Проверка обновлений (ТЗ, этап 5 "Раздача коллегам") =====
 // tauri-plugin-updater — проверяет https://github.com/.../releases/latest/download/
 // latest.json (см. src-tauri/tauri.conf.json), который заливает CI при релизе (см.

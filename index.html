@@ -15,6 +15,28 @@
       <button id="btn-update-dismiss" type="button">Позже</button>
     </div>
 
+    <button id="btn-settings-gear" class="settings-gear" type="button" title="Настройки">⚙</button>
+
+    <div id="settings-modal" class="modal-overlay hidden">
+      <div class="modal" role="dialog" aria-label="Настройки">
+        <div class="modal-header">
+          <h2>Настройки</h2>
+          <button id="btn-settings-close" class="modal-close" type="button" title="Закрыть">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="settings-section-title">Автообновление</div>
+          <label class="settings-check">
+            <input type="checkbox" id="chk-auto-update-minor" />
+            Минорные — ставить автоматом
+          </label>
+          <label class="settings-check">
+            <input type="checkbox" id="chk-auto-update-major" />
+            Мажорные — ставить автоматом
+          </label>
+        </div>
+      </div>
+    </div>
+
     <main class="shell">
       <header class="toolbar toolbar-connect">
         <div id="session-logo" class="logo" data-mood="idle" title="">
@@ -51,15 +73,7 @@
               Внедрить интеграцию вручную
             </button>
             <div class="dropdown-sep"></div>
-            <div class="dropdown-section-title">Автообновление</div>
-            <label class="dropdown-check">
-              <input type="checkbox" id="chk-auto-update-minor" />
-              Минорные — ставить автоматом
-            </label>
-            <label class="dropdown-check">
-              <input type="checkbox" id="chk-auto-update-major" />
-              Мажорные — ставить автоматом
-            </label>
+            <button id="btn-open-settings-menu" type="button">Настройки…</button>
           </div>
         </details>
 

@@ -282,14 +282,96 @@ body {
   margin: 0.1rem 0;
 }
 
-.dropdown-section-title {
+/* ===== Настройки — шестерёнка в углу окна (всегда доступна, независимо от сессии)
+   и то же самое меню продублировано в "Дополнительно" внутри сессии (см. index.html,
+   #btn-open-settings-menu). Одно общее окошко (#settings-modal) на оба входа — там и
+   будущие настройки, если появятся, а не по разным местам. ===== */
+.settings-gear {
+  position: fixed;
+  top: 0.6rem;
+  right: 0.7rem;
+  z-index: 60;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.settings-gear:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.modal-overlay.hidden {
+  display: none;
+}
+
+.modal {
+  width: 100%;
+  max-width: 340px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem 1.1rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.modal-close:hover {
+  color: var(--text);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.settings-section-title {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-dim);
 }
 
-.dropdown-check {
+.settings-check {
   display: flex;
   align-items: center;
   gap: 0.45rem;
@@ -297,7 +379,7 @@ body {
   cursor: pointer;
 }
 
-.dropdown-check input {
+.settings-check input {
   accent-color: var(--accent);
 }
 
@@ -578,6 +660,9 @@ textarea:focus {
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.9rem;
+  /* Запас справа, чтобы кнопки баннера не заезжали под шестерёнку настроек
+     (.settings-gear — отдельный fixed-элемент поверх, z-index выше). */
+  padding-right: 2.8rem;
   background: var(--accent);
   color: var(--accent-text);
   font-size: 0.85rem;
@@ -673,11 +758,11 @@ textarea:focus {
   display: none;
 }
 
-/* Лого сессии, "Завершить сессию" и статус — только внутри сессии, их заменяет сам
-   экран лаунчера. "Дополнительно" — исключение: там теперь ещё и настройки
-   автообновления (см. index.html), которые должны быть доступны и до подключения,
-   раз баннер обновления может появиться прямо на стартовом экране. */
-.shell:not([data-session="active"]) .toolbar-connect > :not(.dropdown) {
+/* Верхний бар целиком нужен только внутри сессии (лого, "Завершить сессию",
+   "Дополнительно" с сессионными действиями, статус) — пока сессии нет, всё это
+   заменяет сам экран лаунчера. Настройки (шестерёнка) теперь отдельная кнопка вне
+   этого бара — см. .settings-gear — поэтому им эта видимость больше не нужна. */
+.shell:not([data-session="active"]) .toolbar-connect {
   display: none;
 }
 
