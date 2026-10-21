@@ -97,12 +97,16 @@ body {
   font-size: 0.85rem;
 }
 
-/* ===== Лого-индикатор сессии (заменяет текстовое саммари "user@host") — живой
-   значок агента: "Term(ii)nal", где "ii" стилизованы под зрачки, а бровь над ними
-   отражает, чем занят агент сейчас (см. setLogoMood в main.ts). Подсказка (title)
-   при наведении — имя/адрес хоста, вместо всегда видимого текста. ===== */
-.session-logo {
-  display: none;
+/* ===== Лого — живой значок "Term(ii)nal", где "ii" стилизованы под зрачки, а бровь
+   над ними отражает настроение. Используется в двух местах с разным размером и
+   видимостью, поэтому визуал — в общем классе .logo, а показ/скрытие и масштаб —
+   отдельными ID-правилами ниже:
+   - #session-logo — в шапке активной сессии (заменяет саммари "user@host", сам хост
+     теперь в подсказке title); настроение живое, см. setLogoMood в main.ts;
+   - #launcher-logo — заголовок стартового экрана (а-ля PuTTY), крупнее, настроение
+     статично "idle" (агента/сессии там ещё нет, менять не на что). ===== */
+.logo {
+  display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   font-weight: 700;
@@ -112,8 +116,18 @@ body {
   user-select: none;
 }
 
-.shell[data-session="active"] .session-logo {
+#session-logo {
+  display: none;
+}
+
+.shell[data-session="active"] #session-logo {
   display: inline-flex;
+}
+
+#launcher-logo {
+  transform: scale(1.7);
+  transform-origin: left center;
+  margin: 0.2rem 0 1.5rem;
 }
 
 .logo-prompt {
@@ -174,11 +188,12 @@ body {
 
 .brow-svg circle {
   fill: var(--accent);
+  r: 3; /* было 1.5 — слишком мелко рядом с "зрачками" (.eye, 5px шириной) */
 }
 
 .brow-svg path {
   stroke: var(--accent);
-  stroke-width: 1.6;
+  stroke-width: 2;
   fill: none;
   stroke-linecap: round;
 }
@@ -190,9 +205,9 @@ body {
   transition: opacity 0.25s ease;
 }
 
-.session-logo[data-mood="idle"] .brow-idle,
-.session-logo[data-mood="hint"] .brow-hint,
-.session-logo[data-mood="thinking"] .brow-thinking {
+.logo[data-mood="idle"] .brow-idle,
+.logo[data-mood="hint"] .brow-hint,
+.logo[data-mood="thinking"] .brow-thinking {
   opacity: 1;
 }
 
