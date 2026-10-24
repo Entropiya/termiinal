@@ -49,6 +49,49 @@ describe("termiinal", () => {
     expect(block.output).toBe(MARKER);
   });
 
+  it("локальный Windows PowerShell тоже нарезается на блоки (успех и ошибка)", async () => {
+    // Завершаем сессию Git Bash из предыдущего теста, возвращаемся в лаунчер.
+    await browser.execute(() => document.querySelector("#btn-ssh").click());
+    await browser.waitUntil(
+      async () => browser.execute(() => document.querySelector(".shell")?.dataset.session === "idle"),
+      { timeout: 30_000, timeoutMsg: "сессия Git Bash не завершилась" },
+    );
+    await browser.execute(() => document.querySelector("#btn-launcher-powershell").click());
+
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => /PS [A-Za-z]:\\[^\n]*>\s*$/m.test(document.querySelector(".xterm-rows")?.innerText ?? "")),
+      { timeout: 90_000, timeoutMsg: "PowerShell не показал промпт" },
+    );
+
+    const findBlock = (cmd) =>
+      browser.waitUntil(
+        async () =>
+          browser.execute((c) => {
+            const el = [...document.querySelectorAll("#blocks .block")].find(
+              (b) => b.querySelector(".cmd")?.textContent.trim() === c,
+            );
+            return el
+              ? { meta: el.querySelector(".meta").textContent, output: el.querySelector("pre").textContent.trim() }
+              : null;
+          }, cmd),
+        { timeout: 30_000, timeoutMsg: `нет блока «${cmd}»` },
+      );
+
+    await browser.keys("echo ps-e2e-42");
+    await browser.keys("Enter");
+    const ok = await findBlock("echo ps-e2e-42");
+    expect(ok.meta).toContain("exit=0");
+    expect(ok.output).toBe("ps-e2e-42");
+
+    // Ошибка командлета: код возврата 1, текст ошибки попал в блок.
+    await browser.keys("Get-Item C:\\net-takogo-puti-xyz");
+    await browser.keys("Enter");
+    const bad = await findBlock("Get-Item C:\\net-takogo-puti-xyz");
+    expect(bad.meta).toContain("exit=1");
+    expect(bad.output).toContain("net-takogo-puti-xyz");
+  });
+
   it("ChatGPT без Codex CLI даёт понятную ошибку; настройки агента лежат в меню ⋯", async () => {
     // На раннере Codex нет (или нет входа) — Rust должен отказать до запуска, с понятным текстом.
     const result = await browser.execute(() => {

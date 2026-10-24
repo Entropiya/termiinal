@@ -6,6 +6,7 @@ import { spawnPty, type PtyHandle } from "./pty";
 import { BlockBuilder, type Block } from "./osc-blocks";
 import { buildIntegrationLine } from "./shell-integration";
 import { startAgent, type AgentHandle } from "./agent";
+import { powerShellArgs } from "./shell-integration";
 import {
   findModel,
   loadSelectedModel,
@@ -410,6 +411,8 @@ rulesListEl.addEventListener("click", (e) => {
 });
 renderRules();
 let currentSessionLabel: string | null = null;
+// PowerShell получает интеграцию при запуске (-EncodedCommand), а не печатью строки в сессию, как bash.
+let currentShellKind: "bash" | "powershell" = "bash";
 let sessionOsInfo: { osId: string | null; osVersionId: string | null } | null = null;
 let probeCapture: ProbeCapture | null = null;
 // После самого маркера конца пробы шелл всё равно дорисует СЛЕДУЮЩИЙ, уже настоящий
@@ -812,7 +815,7 @@ const LAUNCHER_WINDOW_SIZE = new LogicalSize(460, 640);
 const SESSION_WINDOW_SIZE = new LogicalSize(1280, 860);
 
 function setSessionActive(active: boolean) {
-  btnIntegrate.disabled = !active;
+  btnIntegrate.disabled = !active || currentShellKind === "powershell";
   shellEl.dataset.session = active ? "active" : "idle";
   sessionLogoEl.title = active ? currentSessionLabel ?? "" : "";
   if (active) setLogoMood("idle");
@@ -843,7 +846,17 @@ function setSessionActive(active: boolean) {
 // disabled, пока сессия активна (а "Дополнительно" теперь и так показывается только
 // внутри активной сессии — см. .toolbar-connect в styles.css), то есть толку от неё
 // не было в принципе.
+function spawnPowerShell() {
+  currentShellKind = "powershell";
+  // Windows PowerShell (powershell.exe, 5.1 есть на любой Windows). Интеграция OSC 133/633/7 передаётся
+  // при запуске, поэтому ни пробы хоста, ни печати строки в сессию не нужно.
+  spawnShell("PowerShell", "powershell.exe", powerShellArgs()).catch((err) => {
+    statusEl.textContent = `ошибка запуска: ${err}`;
+  });
+}
+
 function spawnGitBash() {
+  currentShellKind = "bash";
   spawnShell("Git Bash", GIT_BASH, ["--login", "-i"], {
     // MSYS-рантайм git-bash по умолчанию не знает про ConPTY и ведёт себя так, будто
     // его вывод никуда не подключён как терминал — отсюда битые Tab/история/стрелки.
@@ -914,6 +927,7 @@ btnBrowseKey.addEventListener("click", async () => {
 let connectedFromSavedPreset = false;
 
 function connectSsh() {
+  currentShellKind = "bash"; // удалённый шелл — bash-подобный, интеграция печатается строкой
   const user = presetUserEl.value.trim();
   const host = presetHostEl.value.trim();
   if (!user || !host) {
@@ -957,6 +971,7 @@ btnSsh.addEventListener("click", () => {
 
 const launcherListEl = document.querySelector<HTMLUListElement>("#launcher-list")!;
 const btnLauncherGitBash = document.querySelector<HTMLButtonElement>("#btn-launcher-gitbash")!;
+const btnLauncherPowerShell = document.querySelector<HTMLButtonElement>("#btn-launcher-powershell")!;
 
 function renderLauncherList() {
   const presets = loadPresets();
@@ -999,6 +1014,7 @@ function renderLauncherList() {
 }
 
 btnLauncherGitBash.addEventListener("click", spawnGitBash);
+btnLauncherPowerShell.addEventListener("click", spawnPowerShell);
 
 renderLauncherList();
 setSessionActive(false);

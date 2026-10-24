@@ -60,6 +60,19 @@ npm run build        # tsc + vite build — гонять тоже, tsc лови�
   по образцу `openai.rs`/`codex_mock.rs` (мок-сервер, наш промпт без изменений, проверка инструментов
   по настоящему запросу, а не по `debug prompt-input`: он показывает не всё).
 
+## Локальные шеллы и интеграция с блоками
+
+- Блоки строятся из OSC 133/633/7. Для bash/ssh интеграцию печатают строкой в сессию
+  (`buildIntegrationLine`), для **локального Windows PowerShell** (`powershell.exe`, кнопка в лаунчере)
+  она передаётся при запуске через `-EncodedCommand` (`powerShellArgs()` в `src/shell-integration.ts`):
+  обёртка `prompt` шлёт D/7/A/B, обёртка `PSConsoleHostReadLine` шлёт E/C. Скрипт должен работать в
+  Windows PowerShell 5.1: без `` `e ``, `&&`, `??`, тернарных операторов (тест это проверяет).
+- Проверка: `src/pty-powershell.integration.test.ts` (настоящий `pwsh` под PTY; тест сам играет терминал и
+  отвечает на `ESC[6n`, без ответа PowerShell молчит; пропускается без `pwsh`, `PWSH_BIN` задаёт путь) и
+  e2e на Windows (там именно 5.1).
+- В сессии PowerShell агент получает `активная сессия: PowerShell`, команды у него в блоке `powershell`
+  (контракт и `system-prompt.md` это знают), а проверка вставки знает опасные команды PowerShell.
+
 ## Что на Linux НЕ проверяется
 
 - ConPTY (`ConPtyBackend`), поведение git-bash/MSYS, `ssh.exe`, `taskkill` в `agent_stop`.

@@ -66,3 +66,10 @@ describe("поведение моделей задаётся одним файл
     }
   });
 });
+
+describe("системный промпт знает про PowerShell", () => {
+  it("описывает сессию PowerShell и язык блока powershell", () => {
+    expect(systemPrompt).toContain("**`PowerShell`**");
+    expect(systemPrompt).toContain("`powershell`");
+  });
+});
