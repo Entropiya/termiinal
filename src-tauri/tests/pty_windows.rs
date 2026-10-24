@@ -8,7 +8,8 @@ use termiinal_lib::pty_backend::{default_backend, PtyProcess, SpawnSpec};
 
 #[test]
 fn conpty_runs_cmd_and_returns_output() {
-    let PtyProcess { mut reader, mut child, .. } = default_backend()
+    // master/writer держим до конца теста: дроп master закрывает псевдоконсоль, и вывода не будет.
+    let PtyProcess { mut reader, mut child, master: _master, writer: _writer, .. } = default_backend()
         .spawn(&SpawnSpec {
             program: "cmd.exe".into(),
             args: vec!["/c".into(), "echo conpty-hello-42".into()],

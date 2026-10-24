@@ -67,7 +67,7 @@ fn bash_runs_command_and_reports_exit_code() {
 
 #[test]
 fn osc_markers_pass_through_intact() {
-    let PtyProcess { reader, mut writer, mut child, .. } = spawn_bash();
+    let PtyProcess { reader, mut writer, mut child, master: _master, .. } = spawn_bash();
     let rx = pump(reader);
     let mut out = Vec::new();
 
@@ -83,7 +83,7 @@ fn osc_markers_pass_through_intact() {
 
 #[test]
 fn resize_and_kill_work() {
-    let PtyProcess { reader, master, killer, mut child, .. } = spawn_bash();
+    let PtyProcess { reader, master, killer, mut child, writer: _writer, .. } = spawn_bash();
     let rx = pump(reader);
     let mut out = Vec::new();
     read_until(&rx, &mut out, "READY> ");
