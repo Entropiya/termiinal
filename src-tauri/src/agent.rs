@@ -6,7 +6,8 @@
 // читает строки с stdout и шлёт их во фронтенд как есть (по строке на событие Tauri),
 // разбор содержимого (stream_event/assistant/result/rate_limit_event/...) — на TS.
 //
-// Флаги изоляции подобраны и ПРОВЕРЕНЫ ЖИВЬЁМ на claude-code 2.1.304 (см. docs/stage2.md):
+// Флаги изоляции подобраны и ПРОВЕРЕНЫ ЖИВЬЁМ на claude-code 2.1.304 (см. docs/stage2.md),
+// `--system-prompt` + `--setting-sources ""` перепроверены на 2.1.310:
 // - `--tools ""` — ноль инструментов вообще (а не чёрный список);
 // - `--mcp-config '{"mcpServers":{}}'` + `--strict-mcp-config` — без этого явного пустого
 //   конфига в сессию всё равно подключался привязанный к аккаунту MCP-коннектор
@@ -76,12 +77,17 @@ fn build_agent_args(system_prompt: &str, model: Option<&str>, max_budget_usd: Op
         "Task,Edit,Write,NotebookEdit",
         "--permission-prompts",
         "none",
-        "--append-system-prompt",
+        // Полная ЗАМЕНА системного промпта нашим (src/system-prompt.md), а не добавка к
+        // встроенному промпту Claude Code: тогда Claude и GPT-адаптер отвечают по одним и тем
+        // же правилам. `--setting-sources ""` отключает подхват CLAUDE.md/настроек из рабочей
+        // папки и ~/.claude — проверено: без него агент цитировал CLAUDE.md из cwd.
+        "--system-prompt",
     ]
     .iter()
     .map(|a| a.to_string())
     .collect();
     args.push(system_prompt.to_string());
+    args.extend(["--setting-sources".to_string(), String::new()]);
     if let Some(m) = model {
         args.extend(["--model".to_string(), m.to_string()]);
     }
@@ -226,8 +232,15 @@ mod tests {
     fn system_prompt_is_passed_as_single_argument() {
         let prompt = "строка 1\nстрока 2 --tools evil";
         let args = build_agent_args(prompt, None, None);
-        assert_eq!(value_after(&args, "--append-system-prompt"), Some(prompt));
+        assert_eq!(value_after(&args, "--system-prompt"), Some(prompt));
         assert_eq!(args.iter().filter(|a| a.as_str() == "--tools").count(), 1);
+    }
+
+    #[test]
+    fn project_settings_and_default_prompt_are_not_used() {
+        let args = build_agent_args("p", None, None);
+        assert_eq!(value_after(&args, "--setting-sources"), Some(""));
+        assert!(!args.contains(&"--append-system-prompt".to_string()));
     }
 
     #[test]
