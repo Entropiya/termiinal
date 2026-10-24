@@ -415,20 +415,6 @@ body {
   color: var(--text-dim);
 }
 
-.settings-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-  color: var(--text);
-}
-
-.settings-hint {
-  margin-top: 0.3rem;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-}
-
 .settings-check {
   display: flex;
   align-items: center;
@@ -904,6 +890,27 @@ textarea:focus {
 .chat-header h2 {
   margin: 0;
   flex: 1;
+}
+
+.agent-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 15rem;
+  padding: 0.7rem;
+}
+
+.menu-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.agent-status-text {
+  font-size: 0.82rem;
+  color: var(--text-dim);
 }
 
 .agent-status-toggle {

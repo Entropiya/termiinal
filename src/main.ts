@@ -8,10 +8,8 @@ import { buildIntegrationLine } from "./shell-integration";
 import { startAgent, type AgentHandle } from "./agent";
 import {
   findModel,
-  loadOpenAiKey,
   loadSelectedModel,
   MODELS,
-  saveOpenAiKey,
   saveSelectedModel,
 } from "./models";
 import { redactSecrets } from "./redact";
@@ -1049,7 +1047,18 @@ function setAgentActive(active: boolean) {
   updateChatInputEnabled();
 }
 
+// Кнопка «Запустить / Остановить» агента.
+const btnAgentToggle = document.querySelector<HTMLButtonElement>("#btn-agent-toggle")!;
+let agentStarting = false;
+
+function updateAgentToggle() {
+  btnAgentToggle.disabled = agentStarting;
+  btnAgentToggle.textContent = agentStarting ? "Запускается…" : agent ? "Остановить" : "Запустить";
+  btnAgentToggle.classList.toggle("btn-primary", !agent && !agentStarting);
+}
+
 function updateChatInputEnabled() {
+  updateAgentToggle();
   const enabled = agent !== null && !agentBusy;
   chatInputEl.disabled = !enabled;
   chatSendEl.disabled = !enabled;
@@ -1114,21 +1123,31 @@ async function startAgentSession() {
   const generation = ++agentGeneration;
   agentStatusEl.textContent = "запускается…";
   setAgentDot("starting");
+  agentStarting = true;
+  updateAgentToggle();
   try {
     agent = await startAgent({
       systemPrompt: buildSystemPrompt(answerStyle),
       model: model.id,
       provider: model.provider,
-      apiKey: model.provider === "openai" ? loadOpenAiKey(localStorage) : undefined,
       maxBudgetUsd: 0.5, // действует только для Claude; у ChatGPT-адаптера расход не считается
       callbacks: {
         onInit: (e) => {
           const isolated = e.tools.length === 0 && e.mcp_servers.length === 0;
-          setAgentDot(isolated ? "on" : "error");
+          if (model.provider === "codex") {
+            // У Codex инструменты отключить нельзя (проверено), поэтому говорим об этом прямо и каждый раз.
+            setAgentDot("on");
+            addChatMessage(
+              "system",
+              "⚠ ChatGPT работает через Codex CLI: отключить его инструменты нельзя. Он ограничен песочницей «только чтение» в пустой папке (запись и сеть запрещены), но читать файлы на этом компьютере технически может. Не вставляй в чат недоверенный текст как указания.",
+            );
+          } else {
+            setAgentDot(isolated ? "on" : "error");
+          }
           agentStatusEl.textContent = `${e.model} · $${sessionCostUsd.toFixed(4)}`;
           // Молчим, когда всё в порядке — предупреждаем только если изоляция НЕ
           // подтвердилась, это единственное, что реально требует внимания пользователя.
-          if (!isolated) {
+          if (!isolated && model.provider !== "codex") {
             addChatMessage(
               "system",
               `⚠ Внимание: у агента есть доступные инструменты (${e.tools.join(", ") || "—"}) или MCP-серверы (${e.mcp_servers.length}). Изоляция не подтверждена.`,
@@ -1189,6 +1208,11 @@ async function startAgentSession() {
             addChatMessage("system", `⚠ лимит/кредит: ${e.rate_limit_info.status} (${e.rate_limit_info.overageDisabledReason ?? ""})`);
           }
         },
+        onRaw: (ev) => {
+          if (ev.type === "system" && ev.subtype === "tool_use") {
+            addChatMessage("system", `⚠ Агент попытался использовать инструмент (${String(ev.tool)}).`);
+          }
+        },
         onStderr: (line) => {
           console.warn("[agent stderr]", line);
         },
@@ -1215,9 +1239,12 @@ async function startAgentSession() {
   } catch (err) {
     agentStatusEl.textContent = `ошибка запуска: ${err}`;
     setAgentDot("error");
-    if (model.provider === "openai") {
+    if (model.provider !== "claude") {
       addChatMessage("system", `⚠ ChatGPT не запустился: ${err}`);
     }
+  } finally {
+    agentStarting = false;
+    updateAgentToggle();
   }
 }
 
@@ -1270,15 +1297,12 @@ agentModelEl.addEventListener("change", () => {
   void swapAgentModel(agentModelEl.value);
 });
 
-const inpOpenAiKey = document.querySelector<HTMLInputElement>("#inp-openai-key")!;
-inpOpenAiKey.value = loadOpenAiKey(localStorage);
-inpOpenAiKey.addEventListener("change", () => saveOpenAiKey(localStorage, inpOpenAiKey.value));
-
-// Отдельных кнопок старт/стоп больше нет — сам статус кликабелен: "не запущен" запускает,
-// название модели (пока агент жив) останавливает.
-agentStatusEl.addEventListener("click", () => {
-  if (agent) agent.stop();
-  else startAgentSession();
+// «Запустить» поднимает агента с выбранной моделью и режимом, «Остановить» гасит его. Модель,
+// режим и политика меняются в меню «⋯» рядом.
+btnAgentToggle.addEventListener("click", () => {
+  if (agentStarting) return;
+  if (agent) void agent.stop();
+  else void startAgentSession();
 });
 
 chatFormEl.addEventListener("submit", (e) => {

@@ -1,4 +1,5 @@
 mod agent;
+pub mod codex;
 mod openai;
 mod pty;
 pub mod pty_backend;

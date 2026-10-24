@@ -31,11 +31,19 @@ npm run build        # tsc + vite build — гонять тоже, tsc лови�
 
 ## Агенты и модели
 
-- Два адаптера за одним интерфейсом `agent_start/agent_send/agent_stop` (`src-tauri/src/agent.rs`):
-  `claude` — живой процесс `claude -p`, `openai` — ChatGPT по API (`src-tauri/src/openai.rs`,
-  Chat Completions, стриминг). Оба эмитят события в формате Claude stream-json, поэтому фронтенд
-  (`src/agent.ts`) один. Список моделей и переключатель — `src/models.ts`, UI — селектор «Модель»
-  в шапке чата; ключ OpenAI — в «Настройках» или `OPENAI_API_KEY`, адрес — `OPENAI_BASE_URL`.
+- Адаптеры за одним интерфейсом `agent_start/agent_send/agent_stop` (`src-tauri/src/agent.rs`):
+  `claude` — живой процесс `claude -p`; `codex` — ChatGPT через Codex CLI с входом пользователя
+  (`src-tauri/src/codex.rs`, ключ не нужен, на ПК должны быть `codex` и `codex login`); `openai` — ChatGPT
+  по API-ключу (`openai.rs`, `OPENAI_API_KEY`, в интерфейсе не предлагается). Все эмитят события в формате
+  Claude stream-json, поэтому фронтенд (`src/agent.ts`) один. Список моделей — `src/models.ts`; в UI
+  кнопка «Запустить/Остановить» и меню «⋯» (модель, режим, политика) в шапке чата.
+- **Codex изолирован слабее Claude, и это не лечится конфигом** (проверено на codex 0.164 настоящими
+  запросами к мок-серверу): основные инструменты (`exec`, мультиагентные) не отключаются, вызов `exec`
+  реально исполняется, а `--json` о нём молчит. Поэтому: `-s read-only` (запись и сеть запрещены, чтение
+  файлов нет), пустая временная папка, `--ignore-user-config`, наш промпт вместо встроенного
+  (`model_instructions_file`), и предупреждение в чате при каждом старте. Не убирай эти меры и не
+  называй Codex-адаптер изолированным. Проверка: `src-tauri/tests/codex_mock.rs` (настоящий Codex против
+  мок-сервера; без `codex` в PATH/`CODEX_BIN` пропускается, в CI Ubuntu его ставит `npm i -g @openai/codex`).
 - **Поведение обеих моделей задаёт один файл — `src/system-prompt.md`** (контракт ответа: первая
   строка-итог, `SKIP`, блоки `bash`/`plan`/`mermaid`; разбор — `src/agent-contract.ts`). Не клади
   правила поведения агента в `CLAUDE.md`, код адаптеров или промпты в UI. Claude запускается с
@@ -49,14 +57,15 @@ npm run build        # tsc + vite build — гонять тоже, tsc лови�
   Править поведение — в этих `.md`, потом прогнать вживую `python3 scripts/live-prompt-check.py teach`
   (нужен вход в `claude`, в CI не запускается; слабые модели игнорируют правила без образцов ответа).
 - Новая модель — строка в `MODELS` (`src/models.ts`); новый провайдер — ветка в `agent_start` и тесты
-  по образцу `openai.rs` (мок-сервер, системный промпт первым сообщением, нет инструментов).
+  по образцу `openai.rs`/`codex_mock.rs` (мок-сервер, наш промпт без изменений, проверка инструментов
+  по настоящему запросу, а не по `debug prompt-input`: он показывает не всё).
 
 ## Что на Linux НЕ проверяется
 
 - ConPTY (`ConPtyBackend`), поведение git-bash/MSYS, `ssh.exe`, `taskkill` в `agent_stop`.
 - Само окно, WebView2, e2e-сценарий (клик → ввод → блок).
 - Установщик, автообновление, подпись.
-- Живой ответ ChatGPT (нужен ключ; тесты идут на мок-сервере) и сценарий первого входа по ssh (`yes/no`) в настоящем окне.
+- Живой ответ ChatGPT (нужен вход в Codex; тесты идут на мок-сервере) и сценарий первого входа по ssh (`yes/no`) в настоящем окне.
 
 Windows-ветки кода хотя бы type-check'ятся из Linux:
 `rustup target add x86_64-pc-windows-gnu && sudo apt-get install gcc-mingw-w64-x86-64`, затем

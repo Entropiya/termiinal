@@ -49,32 +49,40 @@ describe("termiinal", () => {
     expect(block.output).toBe(MARKER);
   });
 
-  it("выбор ChatGPT без ключа даёт понятную ошибку (сеть и OpenAI не нужны)", async () => {
-    // В CI нет OPENAI_API_KEY и ключа в настройках — Rust должен отказать до всякой сети.
+  it("ChatGPT без Codex CLI даёт понятную ошибку; настройки агента лежат в меню ⋯", async () => {
+    // На раннере Codex нет (или нет входа) — Rust должен отказать до запуска, с понятным текстом.
     const result = await browser.execute(() => {
       const select = document.querySelector("#agent-model");
       const options = [...select.options].map((o) => o.value);
+      const style = {
+        options: [...document.querySelector("#agent-style").options].map((o) => o.value),
+        value: document.querySelector("#agent-style").value,
+      };
+      const inMenu = ["#agent-model", "#agent-style", "#agent-policy"].every((id) =>
+        document.querySelector(`#agent-menu ${id}`),
+      );
+      const toggle = document.querySelector("#btn-agent-toggle");
+      const toggleBefore = toggle.textContent;
       select.value = "gpt-6.1-sol";
       select.dispatchEvent(new Event("change"));
-      document.querySelector("#agent-status").click(); // запуск агента с выбранной моделью
-      return { options, saved: localStorage.getItem("termiinal:agent-model") };
+      toggle.click(); // «Запустить» с выбранной моделью
+      return { options, style, inMenu, toggleBefore, saved: localStorage.getItem("termiinal:agent-model") };
     });
-    const style = await browser.execute(() => ({
-      options: [...document.querySelector("#agent-style").options].map((o) => o.value),
-      value: document.querySelector("#agent-style").value,
-      hasRules: !!document.querySelector("#rules-list"),
-    }));
-    expect(style.options).toEqual(["teach", "direct"]);
-    expect(style.value).toBe("teach"); // по умолчанию — режим обучения
-    expect(style.hasRules).toBe(true);
+    expect(result.inMenu).toBe(true);
+    expect(result.toggleBefore).toBe("Запустить");
+    expect(result.style.options).toEqual(["teach", "direct"]);
+    expect(result.style.value).toBe("teach"); // по умолчанию — режим обучения
     expect(result.options).toContain("claude-haiku-5-5");
     expect(result.options).toContain("gpt-6.1-sol");
     expect(result.saved).toBe("gpt-6.1-sol");
 
     await browser.waitUntil(
       async () =>
-        browser.execute(() => document.querySelector("#chat-log")?.textContent.includes("нет ключа OpenAI")),
-      { timeout: 20_000, timeoutMsg: "нет сообщения об отсутствии ключа OpenAI" },
+        browser.execute(() => {
+          const t = document.querySelector("#chat-log")?.textContent ?? "";
+          return t.includes("ChatGPT не запустился") && t.includes("Codex");
+        }),
+      { timeout: 20_000, timeoutMsg: "нет понятной ошибки про Codex" },
     );
   });
 });
