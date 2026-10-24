@@ -4154,7 +4154,7 @@ dependencies = [
 
 [[package]]
 name = "termiinal"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "parking_lot",
