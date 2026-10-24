@@ -54,7 +54,7 @@ describe("termiinal", () => {
     const result = await browser.execute(() => {
       const select = document.querySelector("#agent-model");
       const options = [...select.options].map((o) => o.value);
-      select.value = "gpt-5";
+      select.value = "gpt-6.1-sol";
       select.dispatchEvent(new Event("change"));
       document.querySelector("#agent-status").click(); // запуск агента с выбранной моделью
       return { options, saved: localStorage.getItem("termiinal:agent-model") };
@@ -68,8 +68,8 @@ describe("termiinal", () => {
     expect(style.value).toBe("teach"); // по умолчанию — режим обучения
     expect(style.hasRules).toBe(true);
     expect(result.options).toContain("claude-haiku-5-5");
-    expect(result.options).toContain("gpt-5");
-    expect(result.saved).toBe("gpt-5");
+    expect(result.options).toContain("gpt-6.1-sol");
+    expect(result.saved).toBe("gpt-6.1-sol");
 
     await browser.waitUntil(
       async () =>

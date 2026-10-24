@@ -3,7 +3,9 @@
 // ChatGPT по API (см. src-tauri/src/openai.rs). Системный промпт у всех один — src/system-prompt.md.
 //
 // Идентификаторы моделей OpenAI — просто строки, которые уходят в запрос как есть: если
-// нужной модели нет в списке или имя поменялось, правится только эта таблица.
+// нужной модели нет в списке или имя поменялось, правится только эта таблица. Имена взяты из
+// встроенного каталога Codex CLI 0.164 (`codex debug models`, supported_in_api), живьём с вашим
+// ключом они не проверены.
 
 export type Provider = "claude" | "openai";
 
@@ -17,8 +19,8 @@ export const MODELS: readonly ModelOption[] = [
   { id: "claude-haiku-5-5", provider: "claude", label: "Claude Haiku 5.5" },
   { id: "claude-sonnet-5-5", provider: "claude", label: "Claude Sonnet 5.5" },
   { id: "claude-opus-5-5", provider: "claude", label: "Claude Opus 5.5" },
-  { id: "gpt-5", provider: "openai", label: "ChatGPT gpt-5" },
-  { id: "gpt-5-mini", provider: "openai", label: "ChatGPT gpt-5-mini" },
+  { id: "gpt-6.1-sol", provider: "openai", label: "ChatGPT gpt-6.1-sol" },
+  { id: "gpt-6-luna", provider: "openai", label: "ChatGPT gpt-6-luna (быстрая, дешёвая)" },
 ];
 
 // Самая дешёвая модель по умолчанию, как и раньше.

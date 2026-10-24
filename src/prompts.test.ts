@@ -34,7 +34,7 @@ describe("системный промпт по режимам", () => {
     for (const style of ["teach", "direct"] as const) {
       const systemPrompt = buildSystemPrompt(style);
       const claude = agentStartArgs({ systemPrompt, provider: "claude", model: "claude-haiku-5-5" });
-      const gpt = agentStartArgs({ systemPrompt, provider: "openai", model: "gpt-5", apiKey: "k" });
+      const gpt = agentStartArgs({ systemPrompt, provider: "openai", model: "gpt-6.1-sol", apiKey: "k" });
       expect(gpt.systemPrompt).toBe(claude.systemPrompt);
     }
   });
