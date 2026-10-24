@@ -51,7 +51,7 @@ export const config = {
     {
       maxInstances: 1,
       browserName: "webview2",
-      "ms:edgeOptions": { debuggerAddress: `127.0.0.1:${DEBUG_PORT}`, webviewOptions: {} },
+      "ms:edgeOptions": { debuggerAddress: `127.0.0.1:${DEBUG_PORT}` },
     },
   ],
   reporters: ["spec"],

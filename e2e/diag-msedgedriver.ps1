@@ -56,7 +56,7 @@ $drv2 = Start-Process $env:MSEDGEDRIVER -ArgumentList "--port=9516", "--verbose"
 Start-Sleep -Seconds 3
 $body2 = @{ capabilities = @{ alwaysMatch = @{
   browserName = 'webview2'
-  'ms:edgeOptions' = @{ debuggerAddress = '127.0.0.1:9222'; webviewOptions = @{} }
+  'ms:edgeOptions' = @{ debuggerAddress = '127.0.0.1:9222' }
 } } } | ConvertTo-Json -Depth 6
 try {
   $r2 = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9516/session -Body $body2 -ContentType 'application/json' -TimeoutSec 60
