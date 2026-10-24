@@ -44,3 +44,30 @@ $tmp = Join-Path $env:RUNNER_TEMP "wv2-diag"; New-Item -ItemType Directory -Forc
 Probe "B: + WEBVIEW2_USER_DATA_FOLDER=$tmp" $tmp
 Write-Host "`nLOCALAPPDATA identifier dir:"
 Get-ChildItem "$env:LOCALAPPDATA\com.pakochka.termiinal" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 30 | ForEach-Object { Write-Host "  $($_.FullName)" }
+
+# ---- Часть 3: подключиться msedgedriver'ом к уже запущенному приложению (debuggerAddress)
+Write-Host "`n===== C: attach через debuggerAddress"
+Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
+Remove-Item Env:WEBVIEW2_USER_DATA_FOLDER -ErrorAction SilentlyContinue
+Get-Process termiinal, msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
+$app2 = Start-Process $app -PassThru
+Start-Sleep -Seconds 15
+$drv2 = Start-Process $env:MSEDGEDRIVER -ArgumentList "--port=9516", "--verbose", "--log-path=$PWD\msedgedriver-attach.log" -PassThru
+Start-Sleep -Seconds 3
+$body2 = @{ capabilities = @{ alwaysMatch = @{
+  browserName = 'webview2'
+  'ms:edgeOptions' = @{ debuggerAddress = '127.0.0.1:9222'; webviewOptions = @{} }
+} } } | ConvertTo-Json -Depth 6
+try {
+  $r2 = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9516/session -Body $body2 -ContentType 'application/json' -TimeoutSec 60
+  $sid = $r2.value.sessionId
+  Write-Host "ATTACH OK session=$sid"
+  Write-Host ("title: " + (Invoke-RestMethod "http://127.0.0.1:9516/session/$sid/title").value)
+  $btn = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:9516/session/$sid/element" -Body (@{using='css selector'; value='#btn-launcher-gitbash'} | ConvertTo-Json) -ContentType 'application/json'
+  Write-Host ("launcher button element: " + ($btn | ConvertTo-Json -Compress))
+} catch {
+  Write-Host "ATTACH ERROR: $_"
+  Get-Content "$PWD\msedgedriver-attach.log" -Tail 40 -ErrorAction SilentlyContinue
+}
+Get-Process termiinal, msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
+Stop-Process -Id $drv2.Id -Force -ErrorAction SilentlyContinue
