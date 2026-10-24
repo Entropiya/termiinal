@@ -2,14 +2,14 @@
 // Запускается только на Windows (в CI — windows-latest).
 #![cfg(windows)]
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 use termiinal_lib::pty_backend::{default_backend, PtyProcess, SpawnSpec};
 
 #[test]
 fn conpty_runs_cmd_and_returns_output() {
     // master/writer держим до конца теста: дроп master закрывает псевдоконсоль, и вывода не будет.
-    let PtyProcess { mut reader, mut child, master: _master, writer: _writer, .. } = default_backend()
+    let PtyProcess { mut reader, mut child, master: _master, mut writer, .. } = default_backend()
         .spawn(&SpawnSpec {
             program: "cmd.exe".into(),
             args: vec!["/c".into(), "echo conpty-hello-42".into()],
@@ -37,6 +37,12 @@ fn conpty_runs_cmd_and_returns_output() {
         let left = deadline.saturating_duration_since(Instant::now());
         assert!(!left.is_zero(), "нет вывода от cmd.exe: {:?}", String::from_utf8_lossy(&out));
         if let Ok(chunk) = rx.recv_timeout(left) {
+            // conhost при старте шлёт DSR (ESC[6n, "где курсор?") и не печатает ничего, пока
+            // не получит ответ. В приложении отвечает xterm.js; здесь терминала нет — отвечаем сами.
+            if chunk.windows(4).any(|w| w == b"\x1b[6n") {
+                writer.write_all(b"\x1b[1;1R").unwrap();
+                writer.flush().unwrap();
+            }
             out.extend(chunk);
         }
     }
