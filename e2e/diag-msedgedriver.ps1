@@ -19,3 +19,23 @@ Stop-Process -Id $drv.Id -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 Write-Host "----- msedgedriver log (tail)"
 Get-Content $log -Tail 80 -ErrorAction SilentlyContinue
+
+# ---- Часть 2: честит ли приложение WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS и где у него каталог данных
+function Probe($title, $userDir) {
+  Write-Host "`n===== $title"
+  Get-Process termiinal, msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
+  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+  if ($userDir) { $env:WEBVIEW2_USER_DATA_FOLDER = $userDir } else { Remove-Item Env:WEBVIEW2_USER_DATA_FOLDER -ErrorAction SilentlyContinue }
+  $p = Start-Process $app -PassThru
+  Start-Sleep -Seconds 15
+  Write-Host "app alive: $(-not $p.HasExited); webview2 processes: $((Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Measure-Object).Count)"
+  try { Write-Host ("port 9222: " + (Invoke-RestMethod http://127.0.0.1:9222/json/version -TimeoutSec 5 | ConvertTo-Json -Compress)) } catch { Write-Host "port 9222: $_" }
+  Write-Host "DevToolsActivePort files:"
+  Get-ChildItem -Path $env:LOCALAPPDATA, $env:TEMP, (Split-Path $app) -Recurse -Filter DevToolsActivePort -ErrorAction SilentlyContinue -Depth 4 | ForEach-Object { Write-Host "  $($_.FullName)" }
+  Get-Process termiinal, msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
+}
+Probe "A: только additional args" $null
+$tmp = Join-Path $env:RUNNER_TEMP "wv2-diag"; New-Item -ItemType Directory -Force $tmp | Out-Null
+Probe "B: + WEBVIEW2_USER_DATA_FOLDER=$tmp" $tmp
+Write-Host "`nLOCALAPPDATA identifier dir:"
+Get-ChildItem "$env:LOCALAPPDATA\com.pakochka.termiinal" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 30 | ForEach-Object { Write-Host "  $($_.FullName)" }
