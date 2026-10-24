@@ -59,6 +59,14 @@ describe("termiinal", () => {
       document.querySelector("#agent-status").click(); // запуск агента с выбранной моделью
       return { options, saved: localStorage.getItem("termiinal:agent-model") };
     });
+    const style = await browser.execute(() => ({
+      options: [...document.querySelector("#agent-style").options].map((o) => o.value),
+      value: document.querySelector("#agent-style").value,
+      hasRules: !!document.querySelector("#rules-list"),
+    }));
+    expect(style.options).toEqual(["teach", "direct"]);
+    expect(style.value).toBe("teach"); // по умолчанию — режим обучения
+    expect(style.hasRules).toBe(true);
     expect(result.options).toContain("claude-haiku-5-5");
     expect(result.options).toContain("gpt-5");
     expect(result.saved).toBe("gpt-5");
