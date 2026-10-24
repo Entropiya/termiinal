@@ -11,7 +11,7 @@ import { shouldSendBlock, formatBlocksForAgent, DEFAULT_BLACKLIST, type AgentPol
 import { parseAgentResponse, parsePlanChecklist, type PlanItem } from "./agent-contract";
 import { renderAgentMarkdown } from "./render-markdown";
 import { loadPresets, upsertPreset, removePreset, type ConnectionPreset } from "./presets";
-import { buildProbeCommand, ProbeCapture, type ProbeResult } from "./host-probe";
+import { buildProbeCommand, looksLikeInteractivePrompt, ProbeCapture, type ProbeResult } from "./host-probe";
 import { classifyPaste, type DangerMatch } from "./paste-guard";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
@@ -398,6 +398,34 @@ let probeTrailingTimer: ReturnType<typeof setTimeout> | null = null;
 // в пути по сети, её эхо и эхо самой строки интеграции перемешались бы. Поэтому только
 // ставим флаг здесь, а реально печатаем позже, когда подавление само естественно закончится.
 let pendingAutoIntegration = false;
+// Хвост недавнего вывода и время последнего байта — чтобы не запускать пробу посреди
+// вопроса ssh ("yes/no", пароль): см. looksLikeInteractivePrompt в host-probe.ts.
+const PROBE_IDLE_MS = 800;
+let recentOutput = "";
+let recentOutputDecoder = new TextDecoder();
+let lastOutputAt = 0;
+let probeStartTimer: ReturnType<typeof setTimeout> | null = null;
+
+function noteSessionOutput(bytes: Uint8Array) {
+  recentOutput = (recentOutput + recentOutputDecoder.decode(bytes, { stream: true })).slice(-600);
+  lastOutputAt = Date.now();
+}
+
+function scheduleProbeStart(delayMs: number) {
+  if (probeStartTimer) clearTimeout(probeStartTimer);
+  probeStartTimer = setTimeout(() => {
+    probeStartTimer = null;
+    if (!pty) return;
+    // Вывод ещё идёт или сессия ждёт ответа пользователя (первый вход: "yes/no", пароль) —
+    // пробу не печатаем, проверим позже. Так пользователь успевает увидеть вопрос и ответить.
+    if (Date.now() - lastOutputAt < PROBE_IDLE_MS || looksLikeInteractivePrompt(recentOutput)) {
+      scheduleProbeStart(500);
+      return;
+    }
+    probeCapture = new ProbeCapture();
+    pty.write(buildProbeCommand() + "\r");
+  }, delayMs);
+}
 
 function scheduleProbeTrailingEnd() {
   if (probeTrailingTimer) clearTimeout(probeTrailingTimer);
@@ -648,6 +676,13 @@ async function spawnShell(
     clearTimeout(probeTrailingTimer);
     probeTrailingTimer = null;
   }
+  if (probeStartTimer) {
+    clearTimeout(probeStartTimer);
+    probeStartTimer = null;
+  }
+  recentOutput = "";
+  recentOutputDecoder = new TextDecoder();
+  lastOutputAt = Date.now();
   const cols = term.cols;
   const rows = term.rows;
 
@@ -667,6 +702,7 @@ async function spawnShell(
     cols,
     rows,
     onData: (bytes) => {
+      noteSessionOutput(bytes);
       // Пока идёт скрытая проба хоста (и короткое время после неё, пока шелл дорисовывает
       // следующий промпт) — ни видимый терминал, ни headless-копия её не видят. Обязательно
       // решаем одинаково для обоих: иначе их буферы разойдутся по номерам строк, на
@@ -722,6 +758,10 @@ async function spawnShell(
         clearTimeout(probeTrailingTimer);
         probeTrailingTimer = null;
       }
+      if (probeStartTimer) {
+        clearTimeout(probeStartTimer);
+        probeStartTimer = null;
+      }
     },
   });
 
@@ -730,14 +770,9 @@ async function spawnShell(
   term.focus();
 
   if (probeAfterMs !== undefined) {
-    // Эвристика вместо честного "дождались пустого промпта" (та детекция — отдельная,
-    // более поздняя фича): просто ждём немного, чтобы баннер логина и промпт успели
-    // отрисоваться, прежде чем втихую впечатать пробу.
-    setTimeout(() => {
-      if (!pty) return;
-      probeCapture = new ProbeCapture();
-      pty.write(buildProbeCommand() + "\r");
-    }, probeAfterMs);
+    // Эвристика вместо честного "дождались пустого промпта": ждём паузу в выводе и что
+    // последняя строка не похожа на запрос ввода (см. scheduleProbeStart).
+    scheduleProbeStart(probeAfterMs);
   }
 }
 
