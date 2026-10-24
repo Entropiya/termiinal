@@ -1,4 +1,4 @@
-// Этап 1: минимальный ConPTY-бэкенд поверх portable-pty.
+// Этап 1: минимальный PTY-бэкенд (ConPTY на Windows, см. pty_backend.rs) поверх portable-pty.
 //
 // Задача этого модуля — только дать фронтенду "сырой" байтовый канал к ConPTY:
 // spawn/write/resize/kill. Любая логика нарезки на блоки (OSC 133/633, headless-рендер)
@@ -6,8 +6,9 @@
 // это упрощает сверку "дошёл ли маркер целым" (сверяем то, что реально увидел xterm.js).
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use crate::pty_backend::{default_backend, PtyProcess, SpawnSpec};
 use parking_lot::Mutex;
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{ChildKiller, MasterPty, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -51,44 +52,20 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
 ) -> Result<String, String> {
-    let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| format!("openpty: {e}"))?;
-
-    let mut cmd = CommandBuilder::new(&program);
-    cmd.args(&args);
-    if let Some(dir) = cwd {
-        cmd.cwd(dir);
-    }
-    if let Some(vars) = env {
-        for (k, v) in vars {
-            cmd.env(k, v);
-        }
-    }
-
-    let mut child = pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| format!("spawn {program}: {e}"))?;
-    let killer = child.clone_killer();
-
-    // На Windows слейв-хэндл после spawn больше не нужен приложению.
-    drop(pair.slave);
-
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| format!("clone reader: {e}"))?;
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(|e| format!("take writer: {e}"))?;
+    let PtyProcess {
+        master,
+        mut reader,
+        writer,
+        killer,
+        mut child,
+    } = default_backend().spawn(&SpawnSpec {
+        program,
+        args,
+        cwd,
+        env: env.unwrap_or_default(),
+        cols,
+        rows,
+    })?;
 
     let id = uuid::Uuid::new_v4().to_string();
 
@@ -97,7 +74,7 @@ pub fn pty_spawn(
         map.insert(
             id.clone(),
             PtySession {
-                master: pair.master,
+                master,
                 writer,
                 killer,
             },
