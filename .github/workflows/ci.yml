@@ -86,6 +86,10 @@ jobs:
 
       - run: npm ci --prefix e2e
 
+      - name: Diag — msedgedriver напрямую
+        continue-on-error: true
+        run: ./e2e/diag-msedgedriver.ps1
+
       - name: e2e (tauri-driver + WebdriverIO)
         run: npm run e2e --prefix e2e
 

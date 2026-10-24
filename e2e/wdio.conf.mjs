@@ -31,6 +31,7 @@ export const config = {
   framework: "mocha",
   mochaOpts: { ui: "bdd", timeout: 90_000 },
   logLevel: "info",
+  connectionRetryCount: 0, // не висеть минутами, если сессия не создаётся
   outputDir: ARTIFACTS,
 
   onPrepare() {
