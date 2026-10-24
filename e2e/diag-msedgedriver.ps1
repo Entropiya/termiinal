@@ -30,8 +30,13 @@ function Probe($title, $userDir) {
   Start-Sleep -Seconds 15
   Write-Host "app alive: $(-not $p.HasExited); webview2 processes: $((Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Measure-Object).Count)"
   try { Write-Host ("port 9222: " + (Invoke-RestMethod http://127.0.0.1:9222/json/version -TimeoutSec 5 | ConvertTo-Json -Compress)) } catch { Write-Host "port 9222: $_" }
+  Write-Host "browser process command lines:"
+  Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -notmatch '--type=' } | ForEach-Object { Write-Host "  [$($_.ProcessId)] $($_.CommandLine)" }
+  Write-Host "listening ports of webview2/app processes:"
+  $pids = @((Get-Process msedgewebview2, termiinal -ErrorAction SilentlyContinue).Id)
+  Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $pids -contains $_.OwningProcess } | ForEach-Object { Write-Host "  $($_.LocalAddress):$($_.LocalPort) pid=$($_.OwningProcess)" }
   Write-Host "DevToolsActivePort files:"
-  Get-ChildItem -Path $env:LOCALAPPDATA, $env:TEMP, (Split-Path $app) -Recurse -Filter DevToolsActivePort -ErrorAction SilentlyContinue -Depth 4 | ForEach-Object { Write-Host "  $($_.FullName)" }
+  Get-ChildItem -Path $env:LOCALAPPDATA, $env:TEMP, $env:RUNNER_TEMP, (Split-Path $app) -Recurse -Filter DevToolsActivePort -ErrorAction SilentlyContinue -Depth 4 | ForEach-Object { Write-Host "  $($_.FullName)" }
   Get-Process termiinal, msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 Probe "A: только additional args" $null
