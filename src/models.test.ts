@@ -31,8 +31,8 @@ describe("список моделей", () => {
   it("выбор запоминается; битое хранилище не роняет", () => {
     const store = memoryStore();
     expect(loadSelectedModel(store).id).toBe(DEFAULT_MODEL_ID);
-    saveSelectedModel(store, "gpt-5");
-    expect(loadSelectedModel(store).id).toBe("gpt-5");
+    saveSelectedModel(store, "gpt-6.1-sol");
+    expect(loadSelectedModel(store).id).toBe("gpt-6.1-sol");
     const broken = {
       getItem: () => {
         throw new Error("denied");
@@ -42,7 +42,7 @@ describe("список моделей", () => {
       },
     };
     expect(loadSelectedModel(broken).id).toBe(DEFAULT_MODEL_ID);
-    expect(() => saveSelectedModel(broken, "gpt-5")).not.toThrow();
+    expect(() => saveSelectedModel(broken, "gpt-6.1-sol")).not.toThrow();
   });
 
   it("ключ OpenAI хранится обрезанным по краям", () => {
@@ -56,7 +56,7 @@ describe("список моделей", () => {
 describe("поведение моделей задаётся одним файлом", () => {
   it("системный промпт — один и тот же для Claude и ChatGPT, байт в байт", () => {
     const claude = agentStartArgs({ systemPrompt, provider: "claude", model: "claude-haiku-5-5" });
-    const gpt = agentStartArgs({ systemPrompt, provider: "openai", model: "gpt-5", apiKey: "sk-x" });
+    const gpt = agentStartArgs({ systemPrompt, provider: "openai", model: "gpt-6.1-sol", apiKey: "sk-x" });
     expect(claude.systemPrompt).toBe(gpt.systemPrompt);
     expect(claude.provider).toBe("claude");
     expect(gpt.provider).toBe("openai");
