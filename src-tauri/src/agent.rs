@@ -55,19 +55,10 @@ struct AgentStderrPayload<'a> {
     line: String,
 }
 
-/// Поднять живой процесс `claude -p ...`. Возвращает id сессии; дальше в неё пишут
-/// через agent_send (по одной JSON-строке за раз — ход хода диалога) и слушают
-/// событие `agent-event` (сырая строка stdout) до `agent-exit`.
-#[tauri::command]
-pub fn agent_start(
-    app: AppHandle,
-    state: State<'_, AgentState>,
-    system_prompt: String,
-    model: Option<String>,
-    max_budget_usd: Option<f64>,
-) -> Result<String, String> {
-    let mut cmd = Command::new("claude");
-    cmd.args([
+/// Аргументы командной строки `claude` — вынесены из agent_start, чтобы флаги изоляции
+/// (см. шапку файла) проверялись тестом, а не только живым запуском.
+fn build_agent_args(system_prompt: &str, model: Option<&str>, max_budget_usd: Option<f64>) -> Vec<String> {
+    let mut args: Vec<String> = [
         "-p",
         "--input-format",
         "stream-json",
@@ -86,14 +77,33 @@ pub fn agent_start(
         "--permission-prompts",
         "none",
         "--append-system-prompt",
-        &system_prompt,
-    ]);
-    if let Some(m) = &model {
-        cmd.args(["--model", m]);
+    ]
+    .iter()
+    .map(|a| a.to_string())
+    .collect();
+    args.push(system_prompt.to_string());
+    if let Some(m) = model {
+        args.extend(["--model".to_string(), m.to_string()]);
     }
     if let Some(b) = max_budget_usd {
-        cmd.args(["--max-budget-usd", &b.to_string()]);
+        args.extend(["--max-budget-usd".to_string(), b.to_string()]);
     }
+    args
+}
+
+/// Поднять живой процесс `claude -p ...`. Возвращает id сессии; дальше в неё пишут
+/// через agent_send (по одной JSON-строке за раз — ход хода диалога) и слушают
+/// событие `agent-event` (сырая строка stdout) до `agent-exit`.
+#[tauri::command]
+pub fn agent_start(
+    app: AppHandle,
+    state: State<'_, AgentState>,
+    system_prompt: String,
+    model: Option<String>,
+    max_budget_usd: Option<f64>,
+) -> Result<String, String> {
+    let mut cmd = Command::new("claude");
+    cmd.args(build_agent_args(&system_prompt, model.as_deref(), max_budget_usd));
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
@@ -188,4 +198,46 @@ pub fn agent_stop(state: State<'_, AgentState>, id: String) -> Result<(), String
         let _ = kill.output(); // процесс мог уже выйти сам — это не ошибка
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_agent_args;
+
+    fn value_after<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+        let i = args.iter().position(|a| a == flag)?;
+        args.get(i + 1).map(String::as_str)
+    }
+
+    #[test]
+    fn isolation_flags_are_always_present() {
+        let args = build_agent_args("sys", None, None);
+        assert_eq!(value_after(&args, "--tools"), Some(""));
+        assert_eq!(value_after(&args, "--mcp-config"), Some("{\"mcpServers\":{}}"));
+        assert!(args.contains(&"--strict-mcp-config".to_string()));
+        assert_eq!(value_after(&args, "--permission-prompts"), Some("none"));
+        assert_eq!(
+            value_after(&args, "--disallowedTools"),
+            Some("Task,Edit,Write,NotebookEdit")
+        );
+    }
+
+    #[test]
+    fn system_prompt_is_passed_as_single_argument() {
+        let prompt = "строка 1\nстрока 2 --tools evil";
+        let args = build_agent_args(prompt, None, None);
+        assert_eq!(value_after(&args, "--append-system-prompt"), Some(prompt));
+        assert_eq!(args.iter().filter(|a| a.as_str() == "--tools").count(), 1);
+    }
+
+    #[test]
+    fn model_and_budget_are_optional() {
+        let bare = build_agent_args("p", None, None);
+        assert!(!bare.contains(&"--model".to_string()));
+        assert!(!bare.contains(&"--max-budget-usd".to_string()));
+
+        let full = build_agent_args("p", Some("claude-sonnet-5-5"), Some(1.5));
+        assert_eq!(value_after(&full, "--model"), Some("claude-sonnet-5-5"));
+        assert_eq!(value_after(&full, "--max-budget-usd"), Some("1.5"));
+    }
 }
