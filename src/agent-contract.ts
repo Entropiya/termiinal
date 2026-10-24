@@ -7,7 +7,7 @@ export interface ParsedAgentResponse {
   summary: string;
   /** Ответ был ровно "SKIP" — блок под командой создавать не нужно. */
   isSkip: boolean;
-  /** Содержимое ```bash/```sh/```shell/``` (без языка) блоков — кандидаты на вставку. */
+  /** Содержимое ```bash/```sh/```shell/```powershell/``` (без языка) блоков — кандидаты на вставку. */
   bashBlocks: string[];
   /** Содержимое последнего ```plan блока (чек-лист `- [ ]`/`- [x]`), если был. */
   plan: string | null;
@@ -25,7 +25,8 @@ export interface PlanItem {
 }
 
 const FENCE_RE = /```([A-Za-z]*)\n([\s\S]*?)```/g;
-const BASH_LANGS = new Set(["bash", "sh", "shell", ""]);
+// Блоки с командами для вставки в терминал: bash/sh и PowerShell (локальная сессия на Windows).
+const BASH_LANGS = new Set(["bash", "sh", "shell", "powershell", "pwsh", "ps1", ""]);
 
 export function parseAgentResponse(text: string): ParsedAgentResponse {
   const trimmed = text.trim();

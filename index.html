@@ -31,13 +31,6 @@
             <input type="checkbox" id="chk-auto-update-major" />
             Мажорные — ставить автоматом
           </label>
-
-          <div class="settings-section-title">ChatGPT</div>
-          <label class="settings-field">
-            Ключ OpenAI API
-            <input type="password" id="inp-openai-key" placeholder="sk-… (или переменная OPENAI_API_KEY)" autocomplete="off" spellcheck="false" />
-          </label>
-          <div class="settings-hint">Хранится в настройках приложения на этом компьютере открытым текстом.</div>
         </div>
       </div>
     </div>
@@ -133,6 +126,7 @@
             <ul id="launcher-list" class="launcher-list">
               <li class="launcher-empty">пока пусто — подключись один раз, предложим сохранить</li>
             </ul>
+            <button id="btn-launcher-powershell" class="btn-primary">PowerShell (локально)</button>
             <button id="btn-launcher-gitbash">Git Bash (локально)</button>
 
             <div class="new-conn-section">
@@ -174,26 +168,32 @@
           <div class="chat-header">
             <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">👁 Глянь</button>
             <h2>Чат с агентом</h2>
-            <label class="policy-label">
-              Режим
-              <select id="agent-style" title="Обучение: наводки и маленькие практики вместо готовых команд. Прямой ответ: сразу решение. При смене диалог начинается заново"></select>
-            </label>
-            <label class="policy-label">
-              Модель
-              <select id="agent-model" title="Claude или ChatGPT; при смене диалог с агентом начинается заново"></select>
-            </label>
-            <label class="policy-label">
-              Политика
-              <select id="agent-policy">
-                <option value="auto" selected>Авто</option>
-                <option value="errors-only">Только ошибки</option>
-                <option value="manual">Вручную</option>
-              </select>
-            </label>
             <span class="status">
               <span id="agent-dot" class="dot dot-off"></span>
-              <span id="agent-status" class="agent-status-toggle" title="Нажми, чтобы запустить/остановить агента">не запущен</span>
+              <span id="agent-status" class="agent-status-text">не запущен</span>
             </span>
+            <button id="btn-agent-toggle" class="btn-primary" type="button">Запустить</button>
+            <details id="agent-menu" class="dropdown dropdown-right">
+              <summary title="Модель, режим, политика">⋯</summary>
+              <div class="dropdown-menu agent-menu">
+                <label class="menu-field">
+                  Модель
+                  <select id="agent-model" title="Claude или ChatGPT (через Codex CLI). При смене диалог начинается заново"></select>
+                </label>
+                <label class="menu-field">
+                  Режим
+                  <select id="agent-style" title="Обучение: наводки и маленькие практики вместо готовых команд. Прямой ответ: сразу решение. При смене диалог начинается заново"></select>
+                </label>
+                <label class="menu-field">
+                  Политика
+                  <select id="agent-policy">
+                    <option value="auto" selected>Авто</option>
+                    <option value="errors-only">Только ошибки</option>
+                    <option value="manual">Вручную</option>
+                  </select>
+                </label>
+              </div>
+            </details>
           </div>
           <div id="chat-log" class="chat-log"></div>
           <form id="chat-form" class="chat-form">

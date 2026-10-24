@@ -81,3 +81,10 @@ describe("parsePlanChecklist", () => {
     expect(parsePlanChecklist("")).toEqual([]);
   });
 });
+
+describe("блоки PowerShell", () => {
+  it("```powershell и ```pwsh — кандидаты на вставку, как и bash", () => {
+    const parsed = parseAgentResponse("Итог.\n\n```powershell\nGet-PSDrive -PSProvider FileSystem\n```\n\n```pwsh\nGet-Volume\n```");
+    expect(parsed.bashBlocks).toEqual(["Get-PSDrive -PSProvider FileSystem", "Get-Volume"]);
+  });
+});

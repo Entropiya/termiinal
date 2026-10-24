@@ -20,6 +20,7 @@
 //   которого в `-p`-режиме просто нет.
 // Точные флаги перепроверяются при смене версии CLI — см. ТЗ, разд. "Слой агентов".
 
+use crate::codex::{self, CodexConfig, CodexSession};
 use crate::openai::{self, OpenAiConfig, OpenAiSession};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -37,6 +38,8 @@ pub enum AgentSession {
     Claude { stdin: std::process::ChildStdin, pid: u32 },
     /// ChatGPT по HTTPS (см. openai.rs): процесса нет, история диалога лежит в сессии.
     OpenAi(Arc<OpenAiSession>),
+    /// ChatGPT через Codex CLI с входом пользователя (см. codex.rs): каждый ход — отдельный процесс.
+    Codex(Arc<CodexSession>),
 }
 
 #[derive(Default)]
@@ -114,8 +117,10 @@ pub fn agent_start(
     provider: Option<String>,
     api_key: Option<String>,
 ) -> Result<String, String> {
-    if provider.as_deref() == Some("openai") {
-        return start_openai(&state, system_prompt, model, api_key);
+    match provider.as_deref() {
+        Some("openai") => return start_openai(&state, system_prompt, model, api_key),
+        Some("codex") => return start_codex(&state, system_prompt, model),
+        _ => {}
     }
     let mut cmd = Command::new("claude");
     cmd.args(build_agent_args(&system_prompt, model.as_deref(), max_budget_usd));
@@ -213,6 +218,46 @@ fn start_openai(
     Ok(id)
 }
 
+fn start_codex(state: &State<'_, AgentState>, system_prompt: String, model: Option<String>) -> Result<String, String> {
+    let bin = codex::locate_and_check_login()?;
+    let cfg = CodexConfig {
+        bin,
+        model: model.ok_or("не указана модель ChatGPT")?,
+        system_prompt,
+        extra_args: Vec::new(),
+        extra_env: Vec::new(),
+    };
+    let id = uuid::Uuid::new_v4().to_string();
+    let session = CodexSession::new(cfg, &id).map_err(|e| format!("рабочая папка Codex: {e}"))?;
+    state.0.lock().insert(id.clone(), AgentSession::Codex(Arc::new(session)));
+    Ok(id)
+}
+
+/// Один ход диалога с Codex в отдельном потоке; события уходят в тот же `agent-event`.
+fn spawn_codex_turn(app: AppHandle, id: String, session: Arc<CodexSession>, user_text: String) {
+    std::thread::spawn(move || {
+        let mut history = session.history.lock();
+        let first_turn = !session.turned.swap(true, std::sync::atomic::Ordering::SeqCst);
+        codex::run_turn(
+            &session.cfg,
+            &mut history,
+            &user_text,
+            first_turn,
+            &id,
+            &session.instructions_file(),
+            &session.work_dir(),
+            &session.cancel,
+            &session.pid,
+            &mut |ev| {
+                if session.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
+                let _ = app.emit("agent-event", AgentEventPayload { id: &id, line: ev.to_string() });
+            },
+        );
+    });
+}
+
 /// Один ход диалога с ChatGPT в отдельном потоке; события уходят в тот же `agent-event`.
 fn spawn_openai_turn(app: AppHandle, id: String, session: Arc<OpenAiSession>, user_text: String) {
     std::thread::spawn(move || {
@@ -259,6 +304,13 @@ pub fn agent_send(
             spawn_openai_turn(app, id, session, text);
             Ok(())
         }
+        AgentSession::Codex(session) => {
+            let session = session.clone();
+            drop(map);
+            let text = openai::extract_user_text(&json_line)?;
+            spawn_codex_turn(app, id, session, text);
+            Ok(())
+        }
     }
 }
 
@@ -277,6 +329,10 @@ pub fn agent_stop(app: AppHandle, state: State<'_, AgentState>, id: String) -> R
                 kill.creation_flags(CREATE_NO_WINDOW);
             }
             let _ = kill.output(); // процесс мог уже выйти сам — это не ошибка
+        }
+        Some(AgentSession::Codex(session)) => {
+            session.shutdown();
+            let _ = app.emit("agent-exit", AgentExitPayload { id: &id, code: Some(0) });
         }
         Some(AgentSession::OpenAi(session)) => {
             session.cancel.store(true, std::sync::atomic::Ordering::SeqCst);

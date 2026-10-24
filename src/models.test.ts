@@ -3,10 +3,8 @@ import { agentStartArgs } from "./agent";
 import {
   DEFAULT_MODEL_ID,
   findModel,
-  loadOpenAiKey,
   loadSelectedModel,
   MODELS,
-  saveOpenAiKey,
   saveSelectedModel,
 } from "./models";
 import systemPrompt from "./system-prompt.md?raw";
@@ -17,8 +15,8 @@ function memoryStore() {
 }
 
 describe("список моделей", () => {
-  it("есть и Claude, и ChatGPT; id уникальны; модель по умолчанию в списке", () => {
-    expect(new Set(MODELS.map((m) => m.provider))).toEqual(new Set(["claude", "openai"]));
+  it("есть Claude и ChatGPT (через Codex); id уникальны; модель по умолчанию в списке", () => {
+    expect(new Set(MODELS.map((m) => m.provider))).toEqual(new Set(["claude", "codex"]));
     expect(new Set(MODELS.map((m) => m.id)).size).toBe(MODELS.length);
     expect(MODELS.some((m) => m.id === DEFAULT_MODEL_ID)).toBe(true);
   });
@@ -44,27 +42,20 @@ describe("список моделей", () => {
     expect(loadSelectedModel(broken).id).toBe(DEFAULT_MODEL_ID);
     expect(() => saveSelectedModel(broken, "gpt-6.1-sol")).not.toThrow();
   });
-
-  it("ключ OpenAI хранится обрезанным по краям", () => {
-    const store = memoryStore();
-    expect(loadOpenAiKey(store)).toBe("");
-    saveOpenAiKey(store, "  sk-abc \n");
-    expect(loadOpenAiKey(store)).toBe("sk-abc");
-  });
 });
 
 describe("поведение моделей задаётся одним файлом", () => {
   it("системный промпт — один и тот же для Claude и ChatGPT, байт в байт", () => {
     const claude = agentStartArgs({ systemPrompt, provider: "claude", model: "claude-haiku-5-5" });
-    const gpt = agentStartArgs({ systemPrompt, provider: "openai", model: "gpt-6.1-sol", apiKey: "sk-x" });
+    const gpt = agentStartArgs({ systemPrompt, provider: "codex", model: "gpt-6.1-sol" });
     expect(claude.systemPrompt).toBe(gpt.systemPrompt);
     expect(claude.provider).toBe("claude");
-    expect(gpt.provider).toBe("openai");
+    expect(gpt.provider).toBe("codex");
   });
 
-  it("ключ уходит только провайдеру openai", () => {
-    expect(agentStartArgs({ systemPrompt: "p", provider: "claude", apiKey: "sk-x" }).apiKey).toBeNull();
-    expect(agentStartArgs({ systemPrompt: "p", provider: "openai", apiKey: "" }).apiKey).toBeNull();
+  it("ChatGPT-модели идут через Codex, Claude-модели через claude", () => {
+    expect(MODELS.filter((m) => m.id.startsWith("gpt-")).every((m) => m.provider === "codex")).toBe(true);
+    expect(MODELS.filter((m) => m.id.startsWith("claude-")).every((m) => m.provider === "claude")).toBe(true);
     expect(agentStartArgs({ systemPrompt: "p" }).provider).toBe("claude");
   });
 
@@ -73,5 +64,12 @@ describe("поведение моделей задаётся одним файл
     for (const marker of ["SKIP", "`bash`", "`plan`", "`mermaid`", "[Контекст]", "никогда не выполняешь команды"]) {
       expect(systemPrompt).toContain(marker);
     }
+  });
+});
+
+describe("системный промпт знает про PowerShell", () => {
+  it("описывает сессию PowerShell и язык блока powershell", () => {
+    expect(systemPrompt).toContain("**`PowerShell`**");
+    expect(systemPrompt).toContain("`powershell`");
   });
 });

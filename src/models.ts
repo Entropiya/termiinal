@@ -1,13 +1,14 @@
 // Список моделей, между которыми можно переключаться, и их запоминание. Провайдер
-// определяет адаптер на стороне Rust: "claude" — живой процесс `claude -p`, "openai" —
-// ChatGPT по API (см. src-tauri/src/openai.rs). Системный промпт у всех один — src/system-prompt.md.
+// определяет адаптер на стороне Rust: "claude" — живой процесс `claude -p`, "codex" — ChatGPT через
+// Codex CLI с входом пользователя (src-tauri/src/codex.rs), "openai" — ChatGPT по API-ключу
+// (src-tauri/src/openai.rs, в интерфейсе не предлагается, ключ берётся из OPENAI_API_KEY). Системный промпт у всех один — src/system-prompt.md.
 //
 // Идентификаторы моделей OpenAI — просто строки, которые уходят в запрос как есть: если
 // нужной модели нет в списке или имя поменялось, правится только эта таблица. Имена взяты из
-// встроенного каталога Codex CLI 0.164 (`codex debug models`, supported_in_api), живьём с вашим
-// ключом они не проверены.
+// встроенного каталога Codex CLI 0.164 (`codex debug models`); с вашим входом ChatGPT живьём
+// они не проверены.
 
-export type Provider = "claude" | "openai";
+export type Provider = "claude" | "codex" | "openai";
 
 export interface ModelOption {
   id: string;
@@ -19,8 +20,8 @@ export const MODELS: readonly ModelOption[] = [
   { id: "claude-haiku-5-5", provider: "claude", label: "Claude Haiku 5.5" },
   { id: "claude-sonnet-5-5", provider: "claude", label: "Claude Sonnet 5.5" },
   { id: "claude-opus-5-5", provider: "claude", label: "Claude Opus 5.5" },
-  { id: "gpt-6.1-sol", provider: "openai", label: "ChatGPT gpt-6.1-sol" },
-  { id: "gpt-6-luna", provider: "openai", label: "ChatGPT gpt-6-luna (быстрая, дешёвая)" },
+  { id: "gpt-6.1-sol", provider: "codex", label: "ChatGPT gpt-6.1-sol" },
+  { id: "gpt-6-luna", provider: "codex", label: "ChatGPT gpt-6-luna (быстрая, дешёвая)" },
 ];
 
 // Самая дешёвая модель по умолчанию, как и раньше.
@@ -33,8 +34,6 @@ export function findModel(id: string | null | undefined): ModelOption {
 type KeyValueStore = Pick<Storage, "getItem" | "setItem">;
 
 const MODEL_KEY = "termiinal:agent-model";
-const OPENAI_KEY_KEY = "termiinal:openai-key";
-
 function safeGet(store: KeyValueStore, key: string): string | null {
   try {
     return store.getItem(key);
@@ -57,12 +56,4 @@ export function loadSelectedModel(store: KeyValueStore): ModelOption {
 
 export function saveSelectedModel(store: KeyValueStore, id: string) {
   safeSet(store, MODEL_KEY, findModel(id).id);
-}
-
-export function loadOpenAiKey(store: KeyValueStore): string {
-  return safeGet(store, OPENAI_KEY_KEY) ?? "";
-}
-
-export function saveOpenAiKey(store: KeyValueStore, key: string) {
-  safeSet(store, OPENAI_KEY_KEY, key.trim());
 }

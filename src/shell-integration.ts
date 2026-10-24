@@ -71,3 +71,77 @@ export function buildIntegrationLine(): string {
   // явном history -d выше, который не зависит от HISTCONTROL.
   return " " + parts.join("; ");
 }
+
+// ===== PowerShell =====
+//
+// В PowerShell нет PS0/PROMPT_COMMAND, поэтому те же OSC 133/633/7 даём иначе (по образцу
+// интеграции VS Code):
+//   - функция `prompt` оборачивается: перед печатью промпта шлёт D;код (по истории: если появилась
+//     новая запись) и OSC 7 (cwd), а саму строку промпта окружает A/B;
+//   - `PSConsoleHostReadLine` (PSReadLine) оборачивается: после ввода строки шлёт E;текст и C.
+// Скрипт НЕ печатается в сессию, а передаётся при запуске через `-EncodedCommand` (base64 UTF-16LE):
+// нет эха, нет проблем с кавычками и политикой выполнения скриптов (она касается только файлов).
+// Совместимо с Windows PowerShell 5.1: без `e, тернарных операторов и `&&`; ESC/BEL — через [char].
+const POWERSHELL_INTEGRATION = String.raw`
+try {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+  $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {}
+Set-Location -Path $HOME
+$global:__tm_lastId = -1
+$global:__tm_origPrompt = $function:prompt
+function global:__tm_clean([string]$s) { $s -replace '[\x00-\x1f]', ' ' }
+function global:prompt {
+  $ok = $?
+  $lec = $global:LASTEXITCODE
+  $esc = [char]27
+  $bel = [char]7
+  $r = ''
+  $h = Get-History -Count 1
+  if ($h -and ($h.Id -ne $global:__tm_lastId)) {
+    $global:__tm_lastId = $h.Id
+    $code = 0
+    if (-not $ok) { $code = 1; if (($lec -is [int]) -and ($lec -ne 0)) { $code = $lec } }
+    $r += "$esc]133;D;$code$bel"
+  }
+  if ($PWD.Provider.Name -eq 'FileSystem') {
+    $r += "$esc]7;file://$($env:COMPUTERNAME)/" + ($PWD.Path -replace '\\', '/') + $bel
+  }
+  [Console]::Write($r)
+  $global:LASTEXITCODE = $lec
+  $p = & $global:__tm_origPrompt
+  "$esc]133;A$bel$p$esc]133;B$bel"
+}
+if ((Get-Module -Name PSReadLine) -and $function:PSConsoleHostReadLine) {
+  $global:__tm_origReadLine = $function:PSConsoleHostReadLine
+  function global:PSConsoleHostReadLine {
+    $line = & $global:__tm_origReadLine
+    if ($line -and ($line.Trim().Length -gt 0)) {
+      [Console]::Write(([string][char]27) + ']633;E;' + (__tm_clean $line) + ([string][char]7) + ([string][char]27) + ']133;C' + ([string][char]7))
+    }
+    $line
+  }
+}
+`;
+
+export function buildPowerShellIntegrationScript(): string {
+  return POWERSHELL_INTEGRATION.trim().replace(/\r?\n/g, "\n");
+}
+
+/** Скрипт в формате `powershell -EncodedCommand`: base64 от UTF-16LE. */
+export function encodePowerShellCommand(script: string): string {
+  const bytes: number[] = [];
+  for (let i = 0; i < script.length; i++) {
+    const c = script.charCodeAt(i);
+    bytes.push(c & 0xff, c >> 8);
+  }
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/** Аргументы запуска локального Windows PowerShell с интеграцией. */
+export function powerShellArgs(): string[] {
+  return ["-NoLogo", "-NoExit", "-EncodedCommand", encodePowerShellCommand(buildPowerShellIntegrationScript())];
+}

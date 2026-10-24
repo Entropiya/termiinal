@@ -6,12 +6,11 @@ import { spawnPty, type PtyHandle } from "./pty";
 import { BlockBuilder, type Block } from "./osc-blocks";
 import { buildIntegrationLine } from "./shell-integration";
 import { startAgent, type AgentHandle } from "./agent";
+import { powerShellArgs } from "./shell-integration";
 import {
   findModel,
-  loadOpenAiKey,
   loadSelectedModel,
   MODELS,
-  saveOpenAiKey,
   saveSelectedModel,
 } from "./models";
 import { redactSecrets } from "./redact";
@@ -412,6 +411,8 @@ rulesListEl.addEventListener("click", (e) => {
 });
 renderRules();
 let currentSessionLabel: string | null = null;
+// PowerShell получает интеграцию при запуске (-EncodedCommand), а не печатью строки в сессию, как bash.
+let currentShellKind: "bash" | "powershell" = "bash";
 let sessionOsInfo: { osId: string | null; osVersionId: string | null } | null = null;
 let probeCapture: ProbeCapture | null = null;
 // После самого маркера конца пробы шелл всё равно дорисует СЛЕДУЮЩИЙ, уже настоящий
@@ -814,7 +815,7 @@ const LAUNCHER_WINDOW_SIZE = new LogicalSize(460, 640);
 const SESSION_WINDOW_SIZE = new LogicalSize(1280, 860);
 
 function setSessionActive(active: boolean) {
-  btnIntegrate.disabled = !active;
+  btnIntegrate.disabled = !active || currentShellKind === "powershell";
   shellEl.dataset.session = active ? "active" : "idle";
   sessionLogoEl.title = active ? currentSessionLabel ?? "" : "";
   if (active) setLogoMood("idle");
@@ -845,7 +846,17 @@ function setSessionActive(active: boolean) {
 // disabled, пока сессия активна (а "Дополнительно" теперь и так показывается только
 // внутри активной сессии — см. .toolbar-connect в styles.css), то есть толку от неё
 // не было в принципе.
+function spawnPowerShell() {
+  currentShellKind = "powershell";
+  // Windows PowerShell (powershell.exe, 5.1 есть на любой Windows). Интеграция OSC 133/633/7 передаётся
+  // при запуске, поэтому ни пробы хоста, ни печати строки в сессию не нужно.
+  spawnShell("PowerShell", "powershell.exe", powerShellArgs()).catch((err) => {
+    statusEl.textContent = `ошибка запуска: ${err}`;
+  });
+}
+
 function spawnGitBash() {
+  currentShellKind = "bash";
   spawnShell("Git Bash", GIT_BASH, ["--login", "-i"], {
     // MSYS-рантайм git-bash по умолчанию не знает про ConPTY и ведёт себя так, будто
     // его вывод никуда не подключён как терминал — отсюда битые Tab/история/стрелки.
@@ -916,6 +927,7 @@ btnBrowseKey.addEventListener("click", async () => {
 let connectedFromSavedPreset = false;
 
 function connectSsh() {
+  currentShellKind = "bash"; // удалённый шелл — bash-подобный, интеграция печатается строкой
   const user = presetUserEl.value.trim();
   const host = presetHostEl.value.trim();
   if (!user || !host) {
@@ -959,6 +971,7 @@ btnSsh.addEventListener("click", () => {
 
 const launcherListEl = document.querySelector<HTMLUListElement>("#launcher-list")!;
 const btnLauncherGitBash = document.querySelector<HTMLButtonElement>("#btn-launcher-gitbash")!;
+const btnLauncherPowerShell = document.querySelector<HTMLButtonElement>("#btn-launcher-powershell")!;
 
 function renderLauncherList() {
   const presets = loadPresets();
@@ -1001,6 +1014,7 @@ function renderLauncherList() {
 }
 
 btnLauncherGitBash.addEventListener("click", spawnGitBash);
+btnLauncherPowerShell.addEventListener("click", spawnPowerShell);
 
 renderLauncherList();
 setSessionActive(false);
@@ -1049,7 +1063,18 @@ function setAgentActive(active: boolean) {
   updateChatInputEnabled();
 }
 
+// Кнопка «Запустить / Остановить» агента.
+const btnAgentToggle = document.querySelector<HTMLButtonElement>("#btn-agent-toggle")!;
+let agentStarting = false;
+
+function updateAgentToggle() {
+  btnAgentToggle.disabled = agentStarting;
+  btnAgentToggle.textContent = agentStarting ? "Запускается…" : agent ? "Остановить" : "Запустить";
+  btnAgentToggle.classList.toggle("btn-primary", !agent && !agentStarting);
+}
+
 function updateChatInputEnabled() {
+  updateAgentToggle();
   const enabled = agent !== null && !agentBusy;
   chatInputEl.disabled = !enabled;
   chatSendEl.disabled = !enabled;
@@ -1114,21 +1139,31 @@ async function startAgentSession() {
   const generation = ++agentGeneration;
   agentStatusEl.textContent = "запускается…";
   setAgentDot("starting");
+  agentStarting = true;
+  updateAgentToggle();
   try {
     agent = await startAgent({
       systemPrompt: buildSystemPrompt(answerStyle),
       model: model.id,
       provider: model.provider,
-      apiKey: model.provider === "openai" ? loadOpenAiKey(localStorage) : undefined,
       maxBudgetUsd: 0.5, // действует только для Claude; у ChatGPT-адаптера расход не считается
       callbacks: {
         onInit: (e) => {
           const isolated = e.tools.length === 0 && e.mcp_servers.length === 0;
-          setAgentDot(isolated ? "on" : "error");
+          if (model.provider === "codex") {
+            // У Codex инструменты отключить нельзя (проверено), поэтому говорим об этом прямо и каждый раз.
+            setAgentDot("on");
+            addChatMessage(
+              "system",
+              "⚠ ChatGPT работает через Codex CLI: отключить его инструменты нельзя. Он ограничен песочницей «только чтение» в пустой папке (запись и сеть запрещены), но читать файлы на этом компьютере технически может. Не вставляй в чат недоверенный текст как указания.",
+            );
+          } else {
+            setAgentDot(isolated ? "on" : "error");
+          }
           agentStatusEl.textContent = `${e.model} · $${sessionCostUsd.toFixed(4)}`;
           // Молчим, когда всё в порядке — предупреждаем только если изоляция НЕ
           // подтвердилась, это единственное, что реально требует внимания пользователя.
-          if (!isolated) {
+          if (!isolated && model.provider !== "codex") {
             addChatMessage(
               "system",
               `⚠ Внимание: у агента есть доступные инструменты (${e.tools.join(", ") || "—"}) или MCP-серверы (${e.mcp_servers.length}). Изоляция не подтверждена.`,
@@ -1189,6 +1224,11 @@ async function startAgentSession() {
             addChatMessage("system", `⚠ лимит/кредит: ${e.rate_limit_info.status} (${e.rate_limit_info.overageDisabledReason ?? ""})`);
           }
         },
+        onRaw: (ev) => {
+          if (ev.type === "system" && ev.subtype === "tool_use") {
+            addChatMessage("system", `⚠ Агент попытался использовать инструмент (${String(ev.tool)}).`);
+          }
+        },
         onStderr: (line) => {
           console.warn("[agent stderr]", line);
         },
@@ -1215,9 +1255,12 @@ async function startAgentSession() {
   } catch (err) {
     agentStatusEl.textContent = `ошибка запуска: ${err}`;
     setAgentDot("error");
-    if (model.provider === "openai") {
+    if (model.provider !== "claude") {
       addChatMessage("system", `⚠ ChatGPT не запустился: ${err}`);
     }
+  } finally {
+    agentStarting = false;
+    updateAgentToggle();
   }
 }
 
@@ -1270,15 +1313,12 @@ agentModelEl.addEventListener("change", () => {
   void swapAgentModel(agentModelEl.value);
 });
 
-const inpOpenAiKey = document.querySelector<HTMLInputElement>("#inp-openai-key")!;
-inpOpenAiKey.value = loadOpenAiKey(localStorage);
-inpOpenAiKey.addEventListener("change", () => saveOpenAiKey(localStorage, inpOpenAiKey.value));
-
-// Отдельных кнопок старт/стоп больше нет — сам статус кликабелен: "не запущен" запускает,
-// название модели (пока агент жив) останавливает.
-agentStatusEl.addEventListener("click", () => {
-  if (agent) agent.stop();
-  else startAgentSession();
+// «Запустить» поднимает агента с выбранной моделью и режимом, «Остановить» гасит его. Модель,
+// режим и политика меняются в меню «⋯» рядом.
+btnAgentToggle.addEventListener("click", () => {
+  if (agentStarting) return;
+  if (agent) void agent.stop();
+  else void startAgentSession();
 });
 
 chatFormEl.addEventListener("submit", (e) => {

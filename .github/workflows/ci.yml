@@ -32,6 +32,10 @@ jobs:
       # apt-зависимости Tauri + npm ci + сборка фронта (tsc + vite build)
       - run: scripts/setup-linux.sh
 
+      # Настоящий Codex CLI нужен тесту src-tauri/tests/codex_mock.rs (против мок-сервера, без входа);
+      # без него тест молча пропускается.
+      - run: npm install -g @openai/codex
+
       # vitest (включая интеграцию bash→парсер) + cargo test
       - run: npm test
 

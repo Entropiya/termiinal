@@ -65,6 +65,20 @@ function chmodRecursive777(line: string): boolean {
   return recursive && has777;
 }
 
+/** Remove-Item и его псевдонимы (rm, ri, del, erase, rd, rmdir) опасны сочетанием -Recurse и -Force.
+ * Параметры PowerShell можно сокращать до однозначного префикса (-r, -rec, -fo), поэтому смотрим на них. */
+function psRemoveRecursiveForce(line: string): boolean {
+  const stripped = stripSudo(line);
+  if (!/^(remove-item|ri|rm|del|erase|rd|rmdir)$/i.test(firstWord(stripped))) return false;
+  const tokens = stripped.split(/\s+/).slice(1);
+  const recurse = tokens.some((t) => /^-r(e(c(u(r(s(e)?)?)?)?)?)?$/i.test(t));
+  const force = tokens.some((t) => /^-fo(r(c(e)?)?)?$/i.test(t) || /^-f$/i.test(t));
+  return recurse && force;
+}
+
+const PS_DOWNLOAD = "(?:iwr|irm|invoke-webrequest|invoke-restmethod|curl|wget)";
+const PS_IEX = "(?:iex|invoke-expression)";
+
 const RULES: Rule[] = [
   { group: "Удаление и порча данных", label: "rm -rf", test: rmIsRecursiveForce },
   { group: "Удаление и порча данных", label: "dd", test: (l) => isBaseCommand(l, ["dd"]) },
@@ -118,6 +132,40 @@ const RULES: Rule[] = [
     group: "Системные файлы",
     label: "запись в /etc/",
     test: (l) => /[>]{1,2}\s*\/etc\//.test(l) || /\btee\b[^\n]*\/etc\//i.test(l),
+  },
+  // ----- PowerShell (локальная сессия на Windows) -----
+  { group: "Удаление и порча данных", label: "Remove-Item -Recurse -Force", test: psRemoveRecursiveForce },
+  {
+    group: "Удаление и порча данных",
+    label: "Format-Volume / Clear-Disk",
+    test: (l) => /\b(format-volume|clear-disk|initialize-disk|remove-partition)\b/i.test(l),
+  },
+  {
+    group: "Выполнение чужого кода",
+    label: "iwr … | iex",
+    test: (l) =>
+      new RegExp(`\\b${PS_DOWNLOAD}\\b[^|;\\n]*\\|\\s*${PS_IEX}\\b`, "i").test(l) ||
+      new RegExp(`\\b${PS_IEX}\\b.*(downloadstring|\\b${PS_DOWNLOAD}\\b)`, "i").test(l),
+  },
+  {
+    group: "Потеря доступа к машине",
+    label: "Stop-Computer / Restart-Computer",
+    test: (l) => /\b(stop-computer|restart-computer)\b/i.test(l),
+  },
+  {
+    group: "Потеря доступа к машине",
+    label: "Disable-NetAdapter",
+    test: (l) => /\bdisable-netadapter\b/i.test(l),
+  },
+  {
+    group: "Снижение защиты",
+    label: "Set-ExecutionPolicy Unrestricted/Bypass",
+    test: (l) => /\bset-executionpolicy\b[^\n]*\b(unrestricted|bypass)\b/i.test(l),
+  },
+  {
+    group: "Снижение защиты",
+    label: "отключение Defender",
+    test: (l) => /\bset-mppreference\b[^\n]*-disable\w+\s+(\$true|1)\b/i.test(l),
   },
 ];
 

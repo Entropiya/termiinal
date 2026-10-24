@@ -69,8 +69,6 @@ export interface StartAgentOptions {
   model?: string;
   /** Какой адаптер поднимать; по умолчанию Claude. */
   provider?: Provider;
-  /** Ключ OpenAI (только для provider "openai"); пусто — Rust возьмёт OPENAI_API_KEY. */
-  apiKey?: string;
   maxBudgetUsd?: number;
 }
 
@@ -82,7 +80,6 @@ export function agentStartArgs(opts: StartAgentOptions) {
     model: opts.model ?? null,
     maxBudgetUsd: opts.maxBudgetUsd ?? null,
     provider: opts.provider ?? "claude",
-    apiKey: opts.provider === "openai" ? opts.apiKey || null : null,
   };
 }
 
