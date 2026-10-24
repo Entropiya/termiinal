@@ -31,6 +31,13 @@
             <input type="checkbox" id="chk-auto-update-major" />
             Мажорные — ставить автоматом
           </label>
+
+          <div class="settings-section-title">ChatGPT</div>
+          <label class="settings-field">
+            Ключ OpenAI API
+            <input type="password" id="inp-openai-key" placeholder="sk-… (или переменная OPENAI_API_KEY)" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="settings-hint">Хранится в настройках приложения на этом компьютере открытым текстом.</div>
         </div>
       </div>
     </div>
@@ -167,6 +174,10 @@
           <div class="chat-header">
             <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">👁 Глянь</button>
             <h2>Чат с агентом</h2>
+            <label class="policy-label">
+              Модель
+              <select id="agent-model" title="Claude или ChatGPT; при смене диалог с агентом начинается заново"></select>
+            </label>
             <label class="policy-label">
               Политика
               <select id="agent-policy">

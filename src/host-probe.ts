@@ -62,3 +62,31 @@ export class ProbeCapture {
     return { shellPath, hostname, osId, osVersionId };
   }
 }
+
+// Скрытая проба печатает команду в сессию и глушит весь вывод до маркера конца. Если в этот
+// момент ssh ждёт ответа (первый вход: "Are you sure you want to continue connecting
+// (yes/no)?", пароль, парольная фраза), проба уйдёт как ответ на вопрос, а сам вопрос и
+// ответ пользователя пользователь не увидит. Поэтому пробу запускают, только когда
+// последняя строка вывода НЕ похожа на запрос ввода.
+const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]/g;
+
+const INTERACTIVE_PROMPT_RES = [
+  /\(yes\/no(?:\/\[fingerprint\])?\)\??\s*$/i, // Are you sure you want to continue connecting (yes/no/[fingerprint])?
+  /continue connecting/i,
+  /type 'yes'.*:\s*$/i, // Please type 'yes', 'no' or the fingerprint:
+  /pass(?:word|phrase)[^\n]*:\s*$/i, // password: / user@host's password: / Enter passphrase for key '...':
+  /verification code[^\n]*:\s*$/i,
+  /(?:^|\s)(?:login|username|user name):\s*$/i,
+  /\[y\/n\]\??\s*$/i,
+];
+
+export function looksLikeInteractivePrompt(recentOutput: string): boolean {
+  const lines = recentOutput
+    .replace(ANSI_RE, "")
+    .split(/\r?\n|\r/)
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim() !== "");
+  const last = lines[lines.length - 1];
+  if (last === undefined) return false;
+  return INTERACTIVE_PROMPT_RES.some((re) => re.test(last));
+}

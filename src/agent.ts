@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { Provider } from "./models";
 
 interface InitEvent {
   type: "system";
@@ -63,17 +64,32 @@ export interface AgentCallbacks {
   onRaw?(line: AgentLine): void;
 }
 
-export async function startAgent(opts: {
+export interface StartAgentOptions {
   systemPrompt: string;
   model?: string;
+  /** Какой адаптер поднимать; по умолчанию Claude. */
+  provider?: Provider;
+  /** Ключ OpenAI (только для provider "openai"); пусто — Rust возьмёт OPENAI_API_KEY. */
+  apiKey?: string;
   maxBudgetUsd?: number;
-  callbacks: AgentCallbacks;
-}): Promise<AgentHandle> {
-  const id = await invoke<string>("agent_start", {
+}
+
+/** Аргументы команды `agent_start`. Вынесено отдельной функцией, чтобы тест мог проверить
+ * главное: системный промпт один и тот же для любого провайдера. */
+export function agentStartArgs(opts: StartAgentOptions) {
+  return {
     systemPrompt: opts.systemPrompt,
     model: opts.model ?? null,
     maxBudgetUsd: opts.maxBudgetUsd ?? null,
-  });
+    provider: opts.provider ?? "claude",
+    apiKey: opts.provider === "openai" ? opts.apiKey || null : null,
+  };
+}
+
+export async function startAgent(
+  opts: StartAgentOptions & { callbacks: AgentCallbacks },
+): Promise<AgentHandle> {
+  const id = await invoke<string>("agent_start", agentStartArgs(opts));
 
   const unlistenEvent: UnlistenFn = await listen<{ id: string; line: string }>(
     "agent-event",

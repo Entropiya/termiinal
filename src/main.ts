@@ -6,12 +6,20 @@ import { spawnPty, type PtyHandle } from "./pty";
 import { BlockBuilder, type Block } from "./osc-blocks";
 import { buildIntegrationLine } from "./shell-integration";
 import { startAgent, type AgentHandle } from "./agent";
+import {
+  findModel,
+  loadOpenAiKey,
+  loadSelectedModel,
+  MODELS,
+  saveOpenAiKey,
+  saveSelectedModel,
+} from "./models";
 import { redactSecrets } from "./redact";
 import { shouldSendBlock, formatBlocksForAgent, DEFAULT_BLACKLIST, type AgentPolicy } from "./block-agent";
 import { parseAgentResponse, parsePlanChecklist, type PlanItem } from "./agent-contract";
 import { renderAgentMarkdown } from "./render-markdown";
 import { loadPresets, upsertPreset, removePreset, type ConnectionPreset } from "./presets";
-import { buildProbeCommand, ProbeCapture, type ProbeResult } from "./host-probe";
+import { buildProbeCommand, looksLikeInteractivePrompt, ProbeCapture, type ProbeResult } from "./host-probe";
 import { classifyPaste, type DangerMatch } from "./paste-guard";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
@@ -398,6 +406,34 @@ let probeTrailingTimer: ReturnType<typeof setTimeout> | null = null;
 // в пути по сети, её эхо и эхо самой строки интеграции перемешались бы. Поэтому только
 // ставим флаг здесь, а реально печатаем позже, когда подавление само естественно закончится.
 let pendingAutoIntegration = false;
+// Хвост недавнего вывода и время последнего байта — чтобы не запускать пробу посреди
+// вопроса ssh ("yes/no", пароль): см. looksLikeInteractivePrompt в host-probe.ts.
+const PROBE_IDLE_MS = 800;
+let recentOutput = "";
+let recentOutputDecoder = new TextDecoder();
+let lastOutputAt = 0;
+let probeStartTimer: ReturnType<typeof setTimeout> | null = null;
+
+function noteSessionOutput(bytes: Uint8Array) {
+  recentOutput = (recentOutput + recentOutputDecoder.decode(bytes, { stream: true })).slice(-600);
+  lastOutputAt = Date.now();
+}
+
+function scheduleProbeStart(delayMs: number) {
+  if (probeStartTimer) clearTimeout(probeStartTimer);
+  probeStartTimer = setTimeout(() => {
+    probeStartTimer = null;
+    if (!pty) return;
+    // Вывод ещё идёт или сессия ждёт ответа пользователя (первый вход: "yes/no", пароль) —
+    // пробу не печатаем, проверим позже. Так пользователь успевает увидеть вопрос и ответить.
+    if (Date.now() - lastOutputAt < PROBE_IDLE_MS || looksLikeInteractivePrompt(recentOutput)) {
+      scheduleProbeStart(500);
+      return;
+    }
+    probeCapture = new ProbeCapture();
+    pty.write(buildProbeCommand() + "\r");
+  }, delayMs);
+}
 
 function scheduleProbeTrailingEnd() {
   if (probeTrailingTimer) clearTimeout(probeTrailingTimer);
@@ -648,6 +684,13 @@ async function spawnShell(
     clearTimeout(probeTrailingTimer);
     probeTrailingTimer = null;
   }
+  if (probeStartTimer) {
+    clearTimeout(probeStartTimer);
+    probeStartTimer = null;
+  }
+  recentOutput = "";
+  recentOutputDecoder = new TextDecoder();
+  lastOutputAt = Date.now();
   const cols = term.cols;
   const rows = term.rows;
 
@@ -667,6 +710,7 @@ async function spawnShell(
     cols,
     rows,
     onData: (bytes) => {
+      noteSessionOutput(bytes);
       // Пока идёт скрытая проба хоста (и короткое время после неё, пока шелл дорисовывает
       // следующий промпт) — ни видимый терминал, ни headless-копия её не видят. Обязательно
       // решаем одинаково для обоих: иначе их буферы разойдутся по номерам строк, на
@@ -722,6 +766,10 @@ async function spawnShell(
         clearTimeout(probeTrailingTimer);
         probeTrailingTimer = null;
       }
+      if (probeStartTimer) {
+        clearTimeout(probeStartTimer);
+        probeStartTimer = null;
+      }
     },
   });
 
@@ -730,14 +778,9 @@ async function spawnShell(
   term.focus();
 
   if (probeAfterMs !== undefined) {
-    // Эвристика вместо честного "дождались пустого промпта" (та детекция — отдельная,
-    // более поздняя фича): просто ждём немного, чтобы баннер логина и промпт успели
-    // отрисоваться, прежде чем втихую впечатать пробу.
-    setTimeout(() => {
-      if (!pty) return;
-      probeCapture = new ProbeCapture();
-      pty.write(buildProbeCommand() + "\r");
-    }, probeAfterMs);
+    // Эвристика вместо честного "дождались пустого промпта": ждём паузу в выводе и что
+    // последняя строка не похожа на запрос ввода (см. scheduleProbeStart).
+    scheduleProbeStart(probeAfterMs);
   }
 }
 
@@ -990,6 +1033,8 @@ function updateChatInputEnabled() {
   const enabled = agent !== null && !agentBusy;
   chatInputEl.disabled = !enabled;
   chatSendEl.disabled = !enabled;
+  // Менять модель посреди ответа нельзя — ответ пришёл бы от уже остановленного агента.
+  agentModelEl.disabled = agentBusy;
 }
 
 /** Пачки (ТЗ: "если агент ещё думает над предыдущим блоком, новые блоки копятся в
@@ -1015,16 +1060,34 @@ function trySendPending() {
   });
 }
 
+// Выбор модели (Claude / ChatGPT). Системный промпт один на всех — src/system-prompt.md —
+// и передаётся ниже в startAgent без исключений для провайдеров.
+const agentModelEl = document.querySelector<HTMLSelectElement>("#agent-model")!;
+let selectedModel = loadSelectedModel(localStorage);
+for (const m of MODELS) {
+  const opt = document.createElement("option");
+  opt.value = m.id;
+  opt.textContent = m.label;
+  agentModelEl.appendChild(opt);
+}
+agentModelEl.value = selectedModel.id;
+
+// Номер запущенной сессии агента: колбэки старой сессии (например, её onExit после смены
+// модели) не должны трогать состояние уже запущенной новой.
+let agentGeneration = 0;
+
 async function startAgentSession() {
+  const model = selectedModel;
+  const generation = ++agentGeneration;
   agentStatusEl.textContent = "запускается…";
   setAgentDot("starting");
   try {
     agent = await startAgent({
       systemPrompt,
-      // Самая дешёвая модель по умолчанию для MVP-стенда — реальный выбор модели
-      // (и кнопка "тяжёлая модель на сложный разбор" из ТЗ) это отдельная фича этапа 3.
-      model: "claude-haiku-5-5",
-      maxBudgetUsd: 0.5,
+      model: model.id,
+      provider: model.provider,
+      apiKey: model.provider === "openai" ? loadOpenAiKey(localStorage) : undefined,
+      maxBudgetUsd: 0.5, // действует только для Claude; у ChatGPT-адаптера расход не считается
       callbacks: {
         onInit: (e) => {
           const isolated = e.tools.length === 0 && e.mcp_servers.length === 0;
@@ -1092,8 +1155,10 @@ async function startAgentSession() {
           console.warn("[agent stderr]", line);
         },
         onExit: (code) => {
+          if (generation !== agentGeneration) return; // сессию уже заменили другой
           agentStatusEl.textContent = `процесс завершён (код ${code ?? "?"})`;
           setAgentDot("off");
+          agent?.dispose();
           agent = null;
           agentBusy = false;
           pendingKind = null;
@@ -1107,13 +1172,47 @@ async function startAgentSession() {
     // пока не получит первое сообщение — проверено эмпирически (см. docs/stage2.md).
     // Поэтому дальше честно "ждёт", а не "запускается" — процесс уже живой, просто
     // пока нечего подтвердить (изоляцию покажем, когда придёт init на первое сообщение).
-    agentStatusEl.textContent = "ждёт первого сообщения…";
+    agentStatusEl.textContent = `${model.label}: ждёт первого сообщения…`;
     setAgentActive(true);
   } catch (err) {
     agentStatusEl.textContent = `ошибка запуска: ${err}`;
     setAgentDot("error");
+    if (model.provider === "openai") {
+      addChatMessage("system", `⚠ ChatGPT не запустился: ${err}`);
+    }
   }
 }
+
+/** Смена модели: останавливаем текущую сессию агента и поднимаем новую с выбранной моделью.
+ * Диалог с агентом у новой модели начинается с нуля (у Claude CLI и ChatGPT-адаптера история
+ * живёт внутри сессии); очередь ещё не отправленных блоков сохраняется и уйдёт новой модели. */
+async function swapAgentModel(modelId: string) {
+  const next = findModel(modelId);
+  if (next.id === selectedModel.id) return;
+  if (agentBusy) {
+    agentModelEl.value = selectedModel.id;
+    return;
+  }
+  selectedModel = next;
+  saveSelectedModel(localStorage, next.id);
+  const old = agent;
+  if (!old) return; // агент не запущен — модель применится при следующем запуске
+  agentGeneration++; // колбэки старой сессии больше не считаются «текущими»
+  old.dispose();
+  agent = null;
+  setAgentActive(false);
+  await old.stop().catch((err) => console.warn("[agent] stop при смене модели", err));
+  addChatMessage("system", `Модель: ${next.label}. Диалог с агентом начат заново.`);
+  await startAgentSession();
+}
+
+agentModelEl.addEventListener("change", () => {
+  void swapAgentModel(agentModelEl.value);
+});
+
+const inpOpenAiKey = document.querySelector<HTMLInputElement>("#inp-openai-key")!;
+inpOpenAiKey.value = loadOpenAiKey(localStorage);
+inpOpenAiKey.addEventListener("change", () => saveOpenAiKey(localStorage, inpOpenAiKey.value));
 
 // Отдельных кнопок старт/стоп больше нет — сам статус кликабелен: "не запущен" запускает,
 // название модели (пока агент жив) останавливает.

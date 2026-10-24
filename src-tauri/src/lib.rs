@@ -1,5 +1,7 @@
 mod agent;
+mod openai;
 mod pty;
+pub mod pty_backend;
 
 use agent::{agent_send, agent_start, agent_stop, AgentState};
 use pty::{pty_kill, pty_resize, pty_spawn, pty_write, PtyState};

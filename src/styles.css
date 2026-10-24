@@ -415,6 +415,20 @@ body {
   color: var(--text-dim);
 }
 
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.settings-hint {
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
 .settings-check {
   display: flex;
   align-items: center;

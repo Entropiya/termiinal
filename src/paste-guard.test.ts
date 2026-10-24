@@ -80,3 +80,14 @@ describe("classifyPaste — безобидный текст и многостр�
     expect(classifyPaste("\n\n   \n")).toHaveLength(0);
   });
 });
+
+describe("classifyPaste — края", () => {
+  it("sudo/doas-префикс не прячет опасную команду", () => {
+    expect(labels("sudo rm -rf /")).toContain("rm -rf");
+    expect(labels("doas dd if=/dev/zero of=/dev/sda")).toContain("dd");
+  });
+
+  it("возвращает исходную строку без краевых пробелов", () => {
+    expect(classifyPaste("   rm -rf /tmp/x  ")[0].line).toBe("rm -rf /tmp/x");
+  });
+});
