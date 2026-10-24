@@ -25,16 +25,22 @@ describe("termiinal", () => {
     await browser.keys(`echo ${MARKER}`);
     await browser.keys("Enter");
 
-    await browser.waitUntil(
-      async () => {
-        const cmds = await $$("#blocks .block .cmd").map((e) => e.getText());
-        return cmds.includes(`echo ${MARKER}`);
-      },
+    // Читаем DOM через execute: панель «Блоки» может быть свёрнута, а WebDriver getText()
+    // у невидимых элементов отдаёт пустую строку, хотя блок в DOM есть.
+    const block = await browser.waitUntil(
+      async () =>
+        browser.execute((marker) => {
+          const el = [...document.querySelectorAll("#blocks .block")].find(
+            (b) => b.querySelector(".cmd")?.textContent.trim() === `echo ${marker}`,
+          );
+          return el
+            ? { meta: el.querySelector(".meta").textContent, output: el.querySelector("pre").textContent.trim() }
+            : null;
+        }, MARKER),
       { timeout: 30_000, timeoutMsg: "блок с командой не появился" },
     );
 
-    const block = await $(`#blocks .block*=${MARKER}`);
-    expect(await block.$(".meta").getText()).toContain("exit=0");
-    expect((await block.$("pre").getText()).trim()).toBe(MARKER);
+    expect(block.meta).toContain("exit=0");
+    expect(block.output).toBe(MARKER);
   });
 });
