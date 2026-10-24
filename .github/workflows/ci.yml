@@ -1,0 +1,87 @@
+name: CI
+
+# Запуск на push в любую ветку (теги — это release.yml).
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Ubuntu — npm test + cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # apt-зависимости Tauri + npm ci + сборка фронта (tsc + vite build)
+      - run: scripts/setup-linux.sh
+
+      # vitest (включая интеграцию bash→парсер) + cargo test
+      - run: npm test
+
+  windows:
+    name: Windows — сборка, тесты, e2e
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Unit + integration tests (vitest, cargo test incl. ConPTY)
+        run: npm test
+
+      # Debug-сборка без инсталлятора: e2e нужен только exe. createUpdaterArtifacts
+      # выключаем — для него нужен приватный ключ подписи, а здесь артефакты не раздаются.
+      - name: Build app
+        run: npx tauri build --debug --no-bundle --config src-tauri/tauri.ci.conf.json
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      # msedgedriver должен совпадать по версии с WebView2 Runtime на машине.
+      - name: Install msedgedriver
+        run: |
+          cargo install --git https://github.com/chippers/msedgedriver-tool
+          & "$HOME/.cargo/bin/msedgedriver-tool.exe"
+          "MSEDGEDRIVER=$PWD\msedgedriver.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - run: npm ci --prefix e2e
+
+      - name: e2e (tauri-driver + WebdriverIO)
+        run: npm run e2e --prefix e2e
+
+      - name: Upload e2e artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure
+          path: e2e/artifacts
+          if-no-files-found: ignore
+          retention-days: 7
