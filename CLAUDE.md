@@ -29,11 +29,26 @@ npm run build        # tsc + vite build — гонять тоже, tsc лови�
 - `src-tauri/tests/pty_windows.rs` — ConPTY на `cmd.exe` (`cfg(windows)`).
 - `e2e/` — WebdriverIO + tauri-driver, **только Windows** (в CI). Свой `package.json`.
 
+## Агенты и модели
+
+- Два адаптера за одним интерфейсом `agent_start/agent_send/agent_stop` (`src-tauri/src/agent.rs`):
+  `claude` — живой процесс `claude -p`, `openai` — ChatGPT по API (`src-tauri/src/openai.rs`,
+  Chat Completions, стриминг). Оба эмитят события в формате Claude stream-json, поэтому фронтенд
+  (`src/agent.ts`) один. Список моделей и переключатель — `src/models.ts`, UI — селектор «Модель»
+  в шапке чата; ключ OpenAI — в «Настройках» или `OPENAI_API_KEY`, адрес — `OPENAI_BASE_URL`.
+- **Поведение обеих моделей задаёт один файл — `src/system-prompt.md`** (контракт ответа: первая
+  строка-итог, `SKIP`, блоки `bash`/`plan`/`mermaid`; разбор — `src/agent-contract.ts`). Не клади
+  правила поведения агента в `CLAUDE.md`, код адаптеров или промпты в UI. Claude запускается с
+  `--system-prompt` + `--setting-sources ""`, чтобы не подхватывать этот `CLAUDE.md`.
+- Новая модель — строка в `MODELS` (`src/models.ts`); новый провайдер — ветка в `agent_start` и тесты
+  по образцу `openai.rs` (мок-сервер, системный промпт первым сообщением, нет инструментов).
+
 ## Что на Linux НЕ проверяется
 
 - ConPTY (`ConPtyBackend`), поведение git-bash/MSYS, `ssh.exe`, `taskkill` в `agent_stop`.
 - Само окно, WebView2, e2e-сценарий (клик → ввод → блок).
 - Установщик, автообновление, подпись.
+- Живой ответ ChatGPT (нужен ключ; тесты идут на мок-сервере) и сценарий первого входа по ssh (`yes/no`) в настоящем окне.
 
 Windows-ветки кода хотя бы type-check'ятся из Linux:
 `rustup target add x86_64-pc-windows-gnu && sudo apt-get install gcc-mingw-w64-x86-64`, затем

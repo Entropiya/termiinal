@@ -43,4 +43,25 @@ describe("termiinal", () => {
     expect(block.meta).toContain("exit=0");
     expect(block.output).toBe(MARKER);
   });
+
+  it("выбор ChatGPT без ключа даёт понятную ошибку (сеть и OpenAI не нужны)", async () => {
+    // В CI нет OPENAI_API_KEY и ключа в настройках — Rust должен отказать до всякой сети.
+    const result = await browser.execute(() => {
+      const select = document.querySelector("#agent-model");
+      const options = [...select.options].map((o) => o.value);
+      select.value = "gpt-5";
+      select.dispatchEvent(new Event("change"));
+      document.querySelector("#agent-status").click(); // запуск агента с выбранной моделью
+      return { options, saved: localStorage.getItem("termiinal:agent-model") };
+    });
+    expect(result.options).toContain("claude-haiku-5-5");
+    expect(result.options).toContain("gpt-5");
+    expect(result.saved).toBe("gpt-5");
+
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => document.querySelector("#chat-log")?.textContent.includes("нет ключа OpenAI")),
+      { timeout: 20_000, timeoutMsg: "нет сообщения об отсутствии ключа OpenAI" },
+    );
+  });
 });
