@@ -72,10 +72,29 @@ jobs:
           & "$HOME/.cargo/bin/msedgedriver-tool.exe"
           "MSEDGEDRIVER=$PWD\msedgedriver.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
+      # Диагностика: приложение вообще стартует и живёт? (debug-сборка пишет в консоль)
+      - name: Smoke — app starts and stays alive
+        run: |
+          $p = Start-Process -FilePath src-tauri\target\debug\termiinal.exe -PassThru `
+            -RedirectStandardOutput smoke.out -RedirectStandardError smoke.err
+          Start-Sleep -Seconds 12
+          if ($p.HasExited) { Write-Host "EXITED with code $($p.ExitCode)" } else { Write-Host "still running"; Stop-Process -Id $p.Id -Force }
+          Write-Host "--- stdout"; Get-Content smoke.out -ErrorAction SilentlyContinue
+          Write-Host "--- stderr"; Get-Content smoke.err -ErrorAction SilentlyContinue
+          if ($p.HasExited) { exit 1 }
+
       - run: npm ci --prefix e2e
 
       - name: e2e (tauri-driver + WebdriverIO)
         run: npm run e2e --prefix e2e
+
+      # Артефакты не всегда доступны снаружи — дублируем главное прямо в лог джоба.
+      - name: Print e2e logs
+        if: failure()
+        run: |
+          foreach ($f in Get-ChildItem e2e/artifacts -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.log','.json' }) {
+            Write-Host "===== $($f.Name)"; Get-Content $f.FullName -Tail 80
+          }
 
       - name: Upload e2e artifacts
         if: failure()
