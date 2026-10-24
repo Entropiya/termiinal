@@ -16,9 +16,14 @@ describe("termiinal", () => {
       timeout: 30_000,
       timeoutMsg: "сессия Git Bash не поднялась",
     });
-    // Дать bash дойти до промпта, затем внедрить OSC-хуки (кнопка лежит в закрытом
-    // <details>, поэтому жмём программно).
-    await browser.pause(3000);
+    // Дождаться настоящего промпта bash (на холодном раннере Git Bash стартует долго, фиксированная
+    // пауза была нестабильной), затем внедрить OSC-хуки (кнопка лежит в закрытом <details>,
+    // поэтому жмём программно).
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => /\$\s*$/m.test(document.querySelector(".xterm-rows")?.innerText ?? "")),
+      { timeout: 90_000, timeoutMsg: "Git Bash не показал промпт" },
+    );
     await browser.execute(() => document.querySelector("#btn-integrate").click());
     await browser.pause(2000);
 

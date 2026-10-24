@@ -56,7 +56,7 @@ export const config = {
   ],
   reporters: ["spec"],
   framework: "mocha",
-  mochaOpts: { ui: "bdd", timeout: 90_000 },
+  mochaOpts: { ui: "bdd", timeout: 180_000 },
   logLevel: "info",
   connectionRetryCount: 0, // не висеть минутами, если сессия не создаётся
   outputDir: ARTIFACTS,
