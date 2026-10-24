@@ -175,6 +175,10 @@
             <button id="btn-glance" disabled title="Разбери последний блок, в обход политики">👁 Глянь</button>
             <h2>Чат с агентом</h2>
             <label class="policy-label">
+              Режим
+              <select id="agent-style" title="Обучение: наводки и маленькие практики вместо готовых команд. Прямой ответ: сразу решение. При смене диалог начинается заново"></select>
+            </label>
+            <label class="policy-label">
               Модель
               <select id="agent-model" title="Claude или ChatGPT; при смене диалог с агентом начинается заново"></select>
             </label>
@@ -201,6 +205,8 @@
         <section class="pane pane-plan" id="pane-plan">
           <h2>План</h2>
           <ul id="plan-list" class="plan-list"></ul>
+          <h2>Правила</h2>
+          <ul id="rules-list" class="plan-list"></ul>
         </section>
 
         <section class="pane pane-side" id="pane-side">

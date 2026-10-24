@@ -13,6 +13,8 @@ export interface ParsedAgentResponse {
   plan: string | null;
   /** Содержимое ```mermaid блоков. */
   mermaidBlocks: string[];
+  /** Содержимое ```rule блоков (режим обучения): правила на запомнить, по одному на блок. */
+  rules: string[];
   /** Исходный текст целиком — для рендера как есть, когда остальное не пригодилось. */
   raw: string;
 }
@@ -28,11 +30,12 @@ const BASH_LANGS = new Set(["bash", "sh", "shell", ""]);
 export function parseAgentResponse(text: string): ParsedAgentResponse {
   const trimmed = text.trim();
   if (trimmed === "SKIP") {
-    return { summary: "", isSkip: true, bashBlocks: [], plan: null, mermaidBlocks: [], raw: text };
+    return { summary: "", isSkip: true, bashBlocks: [], plan: null, mermaidBlocks: [], rules: [], raw: text };
   }
 
   const bashBlocks: string[] = [];
   const mermaidBlocks: string[] = [];
+  const rules: string[] = [];
   let plan: string | null = null;
 
   for (const m of text.matchAll(FENCE_RE)) {
@@ -41,6 +44,7 @@ export function parseAgentResponse(text: string): ParsedAgentResponse {
     if (BASH_LANGS.has(lang)) bashBlocks.push(body);
     else if (lang === "plan") plan = body;
     else if (lang === "mermaid") mermaidBlocks.push(body);
+    else if (lang === "rule" && body.trim()) rules.push(body.trim());
   }
 
   const firstLine = text.split("\n", 1)[0]?.trim() ?? "";
@@ -51,6 +55,7 @@ export function parseAgentResponse(text: string): ParsedAgentResponse {
     bashBlocks,
     plan,
     mermaidBlocks,
+    rules,
     raw: text,
   };
 }

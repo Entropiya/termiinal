@@ -28,7 +28,8 @@ import { getVersion } from "@tauri-apps/api/app";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import systemPrompt from "./system-prompt.md?raw";
+import { addRules, loadRules, removeRule, saveRules } from "./playbook";
+import { buildSystemPrompt, loadStyle, parseStyle, saveStyle, STYLES } from "./prompts";
 
 // ТЗ, разд. "Закрытие Tauri": "ссылки из ответов открываются только во внешнем браузере".
 // Единственное место, откуда вообще могут взяться <a>-ссылки — markdown-рендер ответа
@@ -391,6 +392,25 @@ function renderPlan() {
     : `<li class="plan-empty">План пока не составлен.</li>`;
 }
 renderPlan();
+
+// «Правила на запомнить» (режим обучения): агент присылает их блоком ```rule, копим у пользователя.
+const rulesListEl = document.querySelector<HTMLUListElement>("#rules-list")!;
+let rules = loadRules(localStorage);
+
+function renderRules() {
+  rulesListEl.innerHTML = rules.length
+    ? rules.map((r, i) => `<li>${escapeHtml(r)} <button class="rule-remove" data-i="${i}" title="Убрать правило" type="button">✕</button></li>`).join("")
+    : `<li class="plan-empty">появятся, когда агент в режиме обучения предложит правило</li>`;
+}
+
+rulesListEl.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".rule-remove");
+  if (!btn) return;
+  rules = removeRule(rules, Number(btn.dataset.i));
+  saveRules(localStorage, rules);
+  renderRules();
+});
+renderRules();
 let currentSessionLabel: string | null = null;
 let sessionOsInfo: { osId: string | null; osVersionId: string | null } | null = null;
 let probeCapture: ProbeCapture | null = null;
@@ -1035,6 +1055,7 @@ function updateChatInputEnabled() {
   chatSendEl.disabled = !enabled;
   // Менять модель посреди ответа нельзя — ответ пришёл бы от уже остановленного агента.
   agentModelEl.disabled = agentBusy;
+  agentStyleEl.disabled = agentBusy;
 }
 
 /** Пачки (ТЗ: "если агент ещё думает над предыдущим блоком, новые блоки копятся в
@@ -1072,6 +1093,18 @@ for (const m of MODELS) {
 }
 agentModelEl.value = selectedModel.id;
 
+// Режим ответов: обучение (лесенка подсказок) или прямой ответ. Меняет системный промпт, поэтому
+// как и смена модели перезапускает сессию агента.
+const agentStyleEl = document.querySelector<HTMLSelectElement>("#agent-style")!;
+let answerStyle = loadStyle(localStorage);
+for (const st of STYLES) {
+  const opt = document.createElement("option");
+  opt.value = st.id;
+  opt.textContent = st.label;
+  agentStyleEl.appendChild(opt);
+}
+agentStyleEl.value = answerStyle;
+
 // Номер запущенной сессии агента: колбэки старой сессии (например, её onExit после смены
 // модели) не должны трогать состояние уже запущенной новой.
 let agentGeneration = 0;
@@ -1083,7 +1116,7 @@ async function startAgentSession() {
   setAgentDot("starting");
   try {
     agent = await startAgent({
-      systemPrompt,
+      systemPrompt: buildSystemPrompt(answerStyle),
       model: model.id,
       provider: model.provider,
       apiKey: model.provider === "openai" ? loadOpenAiKey(localStorage) : undefined,
@@ -1119,6 +1152,11 @@ async function startAgentSession() {
             streamingDiv = null;
           }
           const parsed = parseAgentResponse(text);
+          if (parsed.rules.length > 0) {
+            rules = addRules(rules, parsed.rules);
+            saveRules(localStorage, rules);
+            renderRules();
+          }
           if (parsed.plan !== null) {
             currentPlan = parsePlanChecklist(parsed.plan);
             renderPlan();
@@ -1183,9 +1221,22 @@ async function startAgentSession() {
   }
 }
 
-/** Смена модели: останавливаем текущую сессию агента и поднимаем новую с выбранной моделью.
- * Диалог с агентом у новой модели начинается с нуля (у Claude CLI и ChatGPT-адаптера история
- * живёт внутри сессии); очередь ещё не отправленных блоков сохраняется и уйдёт новой модели. */
+/** Перезапуск сессии агента (смена модели или режима): останавливаем текущую и поднимаем новую.
+ * Диалог с агентом начинается с нуля (у Claude CLI и ChatGPT-адаптера история живёт внутри
+ * сессии); очередь ещё не отправленных блоков сохраняется и уйдёт новому агенту. Если агент не
+ * запущен, ничего не делаем: выбор применится при следующем запуске. */
+async function restartAgent(note: string) {
+  const old = agent;
+  if (!old) return;
+  agentGeneration++; // колбэки старой сессии больше не считаются «текущими»
+  old.dispose();
+  agent = null;
+  setAgentActive(false);
+  await old.stop().catch((err) => console.warn("[agent] stop при перезапуске", err));
+  addChatMessage("system", note);
+  await startAgentSession();
+}
+
 async function swapAgentModel(modelId: string) {
   const next = findModel(modelId);
   if (next.id === selectedModel.id) return;
@@ -1195,16 +1246,25 @@ async function swapAgentModel(modelId: string) {
   }
   selectedModel = next;
   saveSelectedModel(localStorage, next.id);
-  const old = agent;
-  if (!old) return; // агент не запущен — модель применится при следующем запуске
-  agentGeneration++; // колбэки старой сессии больше не считаются «текущими»
-  old.dispose();
-  agent = null;
-  setAgentActive(false);
-  await old.stop().catch((err) => console.warn("[agent] stop при смене модели", err));
-  addChatMessage("system", `Модель: ${next.label}. Диалог с агентом начат заново.`);
-  await startAgentSession();
+  await restartAgent(`Модель: ${next.label}. Диалог с агентом начат заново.`);
 }
+
+async function swapAnswerStyle(value: string) {
+  const next = parseStyle(value);
+  if (next === answerStyle) return;
+  if (agentBusy) {
+    agentStyleEl.value = answerStyle;
+    return;
+  }
+  answerStyle = next;
+  saveStyle(localStorage, next);
+  const label = STYLES.find((st) => st.id === next)!.label;
+  await restartAgent(`Режим: ${label}. Диалог с агентом начат заново.`);
+}
+
+agentStyleEl.addEventListener("change", () => {
+  void swapAnswerStyle(agentStyleEl.value);
+});
 
 agentModelEl.addEventListener("change", () => {
   void swapAgentModel(agentModelEl.value);

@@ -1140,3 +1140,17 @@ textarea:focus {
 ::-webkit-scrollbar-thumb:hover {
   background: #44464c;
 }
+
+.rule-remove {
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.rule-remove:hover {
+  color: var(--text);
+}
