@@ -74,23 +74,7 @@ jobs:
           & "$HOME/.cargo/bin/msedgedriver-tool.exe"
           "MSEDGEDRIVER=$PWD\msedgedriver.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
-      # Диагностика: приложение вообще стартует и живёт? (debug-сборка пишет в консоль)
-      - name: Smoke — app starts and stays alive
-        run: |
-          $p = Start-Process -FilePath src-tauri\target\debug\termiinal.exe -PassThru `
-            -RedirectStandardOutput smoke.out -RedirectStandardError smoke.err
-          Start-Sleep -Seconds 12
-          $died = $p.HasExited
-          if ($died) { Write-Host "EXITED with code $($p.ExitCode)" } else { Write-Host "still running"; Stop-Process -Id $p.Id -Force }
-          Write-Host "--- stdout"; Get-Content smoke.out -ErrorAction SilentlyContinue
-          Write-Host "--- stderr"; Get-Content smoke.err -ErrorAction SilentlyContinue
-          if ($died) { exit 1 }
-
       - run: npm ci --prefix e2e
-
-      - name: Diag — msedgedriver напрямую
-        continue-on-error: true
-        run: ./e2e/diag-msedgedriver.ps1
 
       - name: e2e (tauri-driver + WebdriverIO)
         run: npm run e2e --prefix e2e
