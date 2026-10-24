@@ -78,10 +78,11 @@ jobs:
           $p = Start-Process -FilePath src-tauri\target\debug\termiinal.exe -PassThru `
             -RedirectStandardOutput smoke.out -RedirectStandardError smoke.err
           Start-Sleep -Seconds 12
-          if ($p.HasExited) { Write-Host "EXITED with code $($p.ExitCode)" } else { Write-Host "still running"; Stop-Process -Id $p.Id -Force }
+          $died = $p.HasExited
+          if ($died) { Write-Host "EXITED with code $($p.ExitCode)" } else { Write-Host "still running"; Stop-Process -Id $p.Id -Force }
           Write-Host "--- stdout"; Get-Content smoke.out -ErrorAction SilentlyContinue
           Write-Host "--- stderr"; Get-Content smoke.err -ErrorAction SilentlyContinue
-          if ($p.HasExited) { exit 1 }
+          if ($died) { exit 1 }
 
       - run: npm ci --prefix e2e
 
