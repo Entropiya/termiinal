@@ -509,10 +509,19 @@ function setAddressIndicator(target: "term" | "chat") {
   document.querySelector(".pane-chat")?.classList.toggle("addressing", target === "chat");
 }
 
+// Пока агент отвечает, поле ввода disabled и теряет фокус сам; запоминаем, где был ввод
+// в последний раз, чтобы вернуть фокус в чат, когда поле снова включится.
+let chatWantsFocus = false;
+
 document.addEventListener("focusin", (e) => {
   const t = e.target as HTMLElement;
-  if (t === chatInputEl) setAddressIndicator("chat");
-  else if (document.getElementById("xterm")?.contains(t)) setAddressIndicator("term");
+  if (t === chatInputEl) {
+    chatWantsFocus = true;
+    setAddressIndicator("chat");
+  } else if (document.getElementById("xterm")?.contains(t)) {
+    chatWantsFocus = false;
+    setAddressIndicator("term");
+  }
 });
 
 /** true, если данные обработаны здесь и в pty уходить не должны. */
@@ -1078,6 +1087,7 @@ function updateChatInputEnabled() {
   const enabled = agent !== null && !agentBusy;
   chatInputEl.disabled = !enabled;
   chatSendEl.disabled = !enabled;
+  if (enabled && chatWantsFocus && document.activeElement !== chatInputEl) chatInputEl.focus();
   // Менять модель посреди ответа нельзя — ответ пришёл бы от уже остановленного агента.
   agentModelEl.disabled = agentBusy;
   agentStyleEl.disabled = agentBusy;
@@ -1352,6 +1362,12 @@ chatInputEl.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.shiftKey && e.code === "Space") {
     e.preventDefault();
     toggleAddressTarget();
+    return;
+  }
+  // Tab в чате переводит в терминал (обратно — Ctrl+Shift+Space или "! ": в терминале Tab нужен шеллу).
+  if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault();
+    term.focus();
   }
 });
 
